@@ -44,7 +44,7 @@ impl Pools {
         channel_id: ChannelId,
         pool_name: &str,
     ) -> anyhow::Result<Pool> {
-
+        todo!();
     }
 }
 
