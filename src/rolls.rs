@@ -2,50 +2,6 @@ use rand::Rng;
 use rand_distr::{Distribution, Uniform};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct Pool {
-    dice: usize,
-}
-impl Pool {
-    pub fn new(dice: usize) -> Self {
-        Self { dice }
-    }
-    pub fn dice(&self) -> usize {
-        self.dice
-    }
-    pub fn roll<R: Rng + ?Sized>(&mut self, rng: &mut R, rolls: &Rolls) -> Vec<Roll> {
-        let rolls: Vec<_> = rolls
-            .sample_iter(rng)
-            .take(self.dice)
-            .inspect(|roll| {
-                if roll.is_grim() {
-                    self.dice -= 1;
-                }
-            })
-            .collect();
-        rolls
-    }
-    // pub fn roll_until_depleted<R: Rng + ?Sized>(&self, rng: &mut R) -> u8 {
-    //     self.dist
-    //         .sample_iter(rng)
-    //         .take(self.dice)
-    //         .max()
-    //         .unwrap_or_default() as u8
-    //         + 1
-    // }
-}
-impl std::fmt::Display for Roll {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Roll::Disaster(r) => r.fmt(f),
-            Roll::Grim(r) => r.fmt(f),
-            Roll::Messy(r) => r.fmt(f),
-            Roll::Perfect(r) => r.fmt(f),
-            Roll::Critical => 6.fmt(f),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Roll {
     Disaster(u8),
@@ -115,6 +71,49 @@ impl Distribution<Roll> for Rolls {
             r @ (4 | 5) => Roll::Messy(r),
             r @ 6 => Roll::Perfect(r),
             _ => unreachable!(),
+        }
+    }
+}
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Pool {
+    dice: usize,
+}
+impl Pool {
+    pub fn new(dice: usize) -> Self {
+        Self { dice }
+    }
+    pub fn dice(&self) -> usize {
+        self.dice
+    }
+    pub fn roll<R: Rng + ?Sized>(&mut self, rng: &mut R, rolls: &Rolls) -> Vec<Roll> {
+        let rolls: Vec<_> = rolls
+            .sample_iter(rng)
+            .take(self.dice)
+            .inspect(|roll| {
+                if roll.is_grim() {
+                    self.dice -= 1;
+                }
+            })
+            .collect();
+        rolls
+    }
+    // pub fn roll_until_depleted<R: Rng + ?Sized>(&self, rng: &mut R) -> u8 {
+    //     self.dist
+    //         .sample_iter(rng)
+    //         .take(self.dice)
+    //         .max()
+    //         .unwrap_or_default() as u8
+    //         + 1
+    // }
+}
+impl std::fmt::Display for Roll {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Roll::Disaster(r) => r.fmt(f),
+            Roll::Grim(r) => r.fmt(f),
+            Roll::Messy(r) => r.fmt(f),
+            Roll::Perfect(r) => r.fmt(f),
+            Roll::Critical => 6.fmt(f),
         }
     }
 }

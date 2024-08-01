@@ -1,26 +1,26 @@
+use std::any::Any;
 use std::sync::{Arc, RwLock};
 
-use anyhow::Context as _;
+use anyhow::{anyhow, Context as _};
 use itertools::Itertools;
 use poise::serenity_prelude::{ClientBuilder, GatewayIntents};
-use pool::{Pool, Roll, Rolls};
 use rand::{thread_rng, Rng};
-use serenity::all::GuildId;
-use shuttle_persist::{Persist, PersistInstance};
+use rolls::{Pool, Roll, Rolls};
+use sea_orm::DatabaseConnection;
+use serenity::all::{ChannelId, ChannelType, GuildId};
 use shuttle_runtime::SecretStore;
 use shuttle_serenity::ShuttleSerenity;
 use std::collections::HashMap;
 
-mod pool;
+mod rolls;
 
 // #[derive(Default)]
 struct Pools {
-    inner: PersistInstance,
-    // inner: Arc<RwLock<HashMap<GuildId, HashMap<String, Pool>>>>,
+    inner: DatabaseConnection,
 }
 
 impl Pools {
-    pub fn new(inner: PersistInstance) -> Self {
+    pub fn new(inner: DatabaseConnection) -> Self {
         Self { inner }
     }
     pub fn roll_pool<R: Rng + ?Sized>(
@@ -29,15 +29,22 @@ impl Pools {
         pool_name: &str,
         rng: &mut R,
         rolls: &Rolls,
-    ) -> Result<Option<Vec<Roll>>, shuttle_persist::PersistError> {
+    ) -> Result<Option<Vec<Roll>>, anyhow::Error> {
         let guild_id = guild_id.to_string();
-        let mut server_pools: HashMap<String, Pool> = self.inner.load(&guild_id)?;
+        let mut server_pools: HashMap<String, Pool> = todo!();
         let Some(pool) = server_pools.get_mut(pool_name) else {
             return Ok(None);
         };
         let rolls = pool.roll(rng, rolls);
-        self.inner.save(&guild_id, server_pools)?;
+        // self.inner.save(&guild_id, server_pools)?;
         Ok(Some(rolls))
+    }
+    pub async fn get_channel_pool(
+        &self,
+        channel_id: ChannelId,
+        pool_name: &str,
+    ) -> anyhow::Result<Pool> {
+
     }
 }
 
@@ -93,13 +100,23 @@ async fn pooln(
 #[poise::command(
     prefix_command,
     slash_command,
-    subcommands("new", "reset", "delete", "adddice")
+    subcommands("new", "roll", "reset", "delete", "adddice")
 )]
 async fn pool(_: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 #[poise::command(prefix_command, slash_command)]
 async fn new(
+    ctx: Context<'_>,
+    #[description = "Name of the pool"] pool: String,
+) -> Result<(), Error> {
+    let guild_id = ctx.guild_id().map(|gid| gid.get());
+    let channel_id = ctx.channel_id().get();
+    ctx.say("world!").await?;
+    Ok(())
+}
+#[poise::command(prefix_command, slash_command)]
+async fn roll(
     ctx: Context<'_>,
     #[description = "Name of the pool"] pool: String,
 ) -> Result<(), Error> {
@@ -135,12 +152,15 @@ async fn adddice(
 #[shuttle_runtime::main]
 async fn main(
     #[shuttle_runtime::Secrets] secret_store: SecretStore,
-    #[shuttle_persist::Persist] persist: shuttle_persist::PersistInstance,
+    #[shuttle_shared_db::Postgres] conn_str: String,
 ) -> ShuttleSerenity {
     // Get the discord token set in `Secrets.toml`
     let discord_token = secret_store
         .get("DISCORD_TOKEN")
         .context("'DISCORD_TOKEN' was not found")?;
+    let conn = sea_orm::Database::connect(conn_str)
+        .await
+        .map_err(|e| anyhow!(e))?;
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
@@ -152,7 +172,7 @@ async fn main(
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                 Ok(Data {
                     rolls: Rolls::new(),
-                    pools: Pools::new(persist),
+                    pools: Pools::new(conn),
                 })
             })
         })
