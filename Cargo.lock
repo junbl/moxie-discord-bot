@@ -865,26 +865,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
-name = "grimwild-discord-bot"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "itertools 0.13.0",
- "poise",
- "rand",
- "rand_distr",
- "sea-orm",
- "serde",
- "serde_json",
- "serenity",
- "shuttle-runtime",
- "shuttle-serenity",
- "shuttle-shared-db",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "h2"
 version = "0.3.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1327,6 +1307,26 @@ dependencies = [
  "log",
  "wasi",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "moxie-discord-bot"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "itertools 0.13.0",
+ "poise",
+ "rand",
+ "rand_distr",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "serenity",
+ "shuttle-runtime",
+ "shuttle-serenity",
+ "shuttle-shared-db",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
