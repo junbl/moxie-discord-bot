@@ -46,7 +46,7 @@ impl PoolInDb {
             PoolId::Server(id) => {
                 server_pool::ActiveModel {
                     id: Unchanged(id),
-                    current_size: Set(self.pool.dice()),
+                    current_size: Set(self.pool.dice() as i16),
                     updated: Set(chrono::Utc::now()),
                     ..Default::default()
                 }
@@ -56,7 +56,7 @@ impl PoolInDb {
             PoolId::Channel(id) => {
                 channel_pool::ActiveModel {
                     id: Unchanged(id),
-                    current_size: Set(self.pool.dice()),
+                    current_size: Set(self.pool.dice() as i16),
                     updated: Set(chrono::Utc::now()),
                     ..Default::default()
                 }
@@ -100,13 +100,13 @@ impl Pools {
                 .filter(server_pool::Column::Name.eq(pool_name))
                 .one(conn)
                 .await?
-                .map(|pool| PoolInDb::new(pool.current_size, PoolId::Server(pool.id))),
+                .map(|pool| PoolInDb::new(pool.current_size as u8, PoolId::Server(pool.id))),
             Scope::Channel(channel_id) => channel_pool::Entity::find()
                 .filter(channel_pool::Column::ChannelId.eq(channel_id.get()))
                 .filter(channel_pool::Column::Name.eq(pool_name))
                 .one(conn)
                 .await?
-                .map(|pool| PoolInDb::new(pool.current_size, PoolId::Channel(pool.id))),
+                .map(|pool| PoolInDb::new(pool.current_size as u8, PoolId::Channel(pool.id))),
         })
     }
     pub async fn new_pool(
@@ -115,6 +115,7 @@ impl Pools {
         pool_name: String,
         pool_size: u8,
     ) -> Result<(), Error> {
+        let pool_size = pool_size as i16;
         match scope {
             Scope::Server(server_id) => {
                 let new_pool = server_pool::ActiveModel {

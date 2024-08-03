@@ -9,8 +9,8 @@ pub struct Model {
     pub id: i32,
     pub server_id: i64,
     pub name: String,
-    pub original_size: u8,
-    pub current_size: u8,
+    pub original_size: i16,
+    pub current_size: i16,
     pub created: DateTimeUtc,
     pub updated: DateTimeUtc,
 }
