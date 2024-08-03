@@ -50,6 +50,16 @@ impl MigrationTrait for Migration {
             )
             .await?;
         manager
+            .create_index(
+                Index::create()
+                    .table(ServerPool::Table)
+                    .unique()
+                    .col(ServerPool::Name)
+                    .col(ServerPool::ServerId)
+                    .take(),
+            )
+            .await?;
+        manager
             .create_table(
                 Table::create()
                     .table(ChannelPool::Table)
@@ -89,6 +99,16 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
+                    .take(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .table(ChannelPool::Table)
+                    .unique()
+                    .col(ChannelPool::Name)
+                    .col(ChannelPool::ChannelId)
                     .take(),
             )
             .await?;

@@ -12,6 +12,7 @@ use crate::{
     Context, Error,
 };
 
+#[derive(Clone, Copy)]
 pub enum Scope {
     Server(GuildId),
     Channel(ChannelId),
@@ -64,6 +65,10 @@ pub fn print_pool_results(rolls: &[Roll], pool: Pool) -> String {
     )
 }
 
+fn scope_or_default(opt_scope: Option<Scope>, ctx: &Context) -> Scope {
+    opt_scope.unwrap_or_else(|| Scope::Channel(ctx.channel_id()))
+}
+
 /// Entrypoint for interacting with pools.
 #[poise::command(
     prefix_command,
@@ -81,9 +86,11 @@ async fn new(
     #[description = "Where to store this pool (either channel or server, defaults to channel)"]
     scope: Option<Scope>,
 ) -> Result<(), Error> {
-    let scope = scope.unwrap_or_else(|| Scope::Channel(ctx.channel_id()));
     let message = format!("Created new pool \"{name}\" with {num_dice} dice!");
-    ctx.data().pools.new_pool(scope, name, num_dice).await?;
+    ctx.data()
+        .pools
+        .create(scope_or_default(scope, &ctx), name, num_dice)
+        .await?;
     ctx.say(message).await?;
     Ok(())
 }
@@ -108,7 +115,7 @@ async fn roll(
         if let Some(p) = ctx
             .data()
             .pools
-            .roll_pool(scope, pool_name, &ctx.data().rolls)
+            .roll(scope, pool_name, &ctx.data().rolls)
             .await
             .ok()
             .flatten()
@@ -118,7 +125,12 @@ async fn roll(
         }
     }
     if let Some((pool, rolls)) = rolls {
-        ctx.say(print_pool_results(&rolls, pool.pool)).await?;
+        ctx.say(format!(
+            "Rolled pool \"{pool_name}\" with {} dice\n{}",
+            rolls.len(),
+            print_pool_results(&rolls, pool.pool)
+        ))
+        .await?;
         Ok(())
     } else {
         Err(anyhow::anyhow!("Pool {pool_name} not found!").into())
@@ -128,6 +140,7 @@ async fn roll(
 async fn reset(
     ctx: Context<'_>,
     #[description = "Name of the pool"] pool: String,
+    #[description = "Where to look for the pool"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     ctx.say("world!").await?;
     Ok(())
@@ -135,15 +148,27 @@ async fn reset(
 #[poise::command(prefix_command, slash_command)]
 async fn delete(
     ctx: Context<'_>,
-    #[description = "Name of the pool"] pool: String,
+    #[description = "Name of the pool"] pool_name: String,
+    #[description = "Where to look for the pool"] scope: Option<Scope>,
 ) -> Result<(), Error> {
-    ctx.say("world!").await?;
+    let deleted_pool = ctx
+        .data()
+        .pools
+        .delete(scope_or_default(scope, &ctx), &pool_name)
+        .await?;
+
+    ctx.say(format!(
+        "Deleted pool \"{pool_name}\" (had {} dice left)",
+        deleted_pool.dice(),
+    ))
+    .await?;
     Ok(())
 }
 #[poise::command(prefix_command, slash_command)]
 async fn adddice(
     ctx: Context<'_>,
     #[description = "Name of the pool"] pool: String,
+    #[description = "Where to look for the pool"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     ctx.say("world!").await?;
     Ok(())
@@ -152,6 +177,7 @@ async fn adddice(
 async fn check(
     ctx: Context<'_>,
     #[description = "Name of the pool"] pool: String,
+    #[description = "Where to look for the pool"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     ctx.say("world!").await?;
     Ok(())

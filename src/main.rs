@@ -66,6 +66,17 @@ impl PoolInDb {
         }
         Ok(rolls)
     }
+    pub async fn delete(self, conn: &DatabaseConnection) -> Result<Pool, Error> {
+        let delete = match self.id {
+            PoolId::Server(id) => server_pool::Entity::delete_by_id(id).exec(conn).await,
+            PoolId::Channel(id) => channel_pool::Entity::delete_by_id(id).exec(conn).await,
+        }?;
+        if delete.rows_affected == 1 {
+            Ok(self.pool)
+        } else {
+            Err(anyhow!("Didn't delete exactly one row: {}", delete.rows_affected).into())
+        }
+    }
 }
 
 struct Pools {
@@ -76,23 +87,19 @@ impl Pools {
     pub fn new(conn: DatabaseConnection) -> Self {
         Self { conn }
     }
-    pub async fn roll_pool(
+    pub async fn roll(
         &self,
         scope: Scope,
         pool_name: &str,
         rolls: &Rolls,
     ) -> Result<Option<(PoolInDb, Vec<Roll>)>, anyhow::Error> {
-        let Some(mut pool) = self.get_pool(scope, pool_name).await? else {
+        let Some(mut pool) = self.get(scope, pool_name).await? else {
             return Ok(None);
         };
         let rolls = pool.roll(&self.conn, rolls).await?;
         Ok(Some((pool, rolls)))
     }
-    pub async fn get_pool(
-        &self,
-        scope: Scope,
-        pool_name: &str,
-    ) -> anyhow::Result<Option<PoolInDb>> {
+    pub async fn get(&self, scope: Scope, pool_name: &str) -> anyhow::Result<Option<PoolInDb>> {
         let conn = &self.conn;
         Ok(match scope {
             Scope::Server(server_id) => server_pool::Entity::find()
@@ -109,36 +116,42 @@ impl Pools {
                 .map(|pool| PoolInDb::new(pool.current_size as u8, PoolId::Channel(pool.id))),
         })
     }
-    pub async fn new_pool(
-        &self,
-        scope: Scope,
-        pool_name: String,
-        pool_size: u8,
-    ) -> Result<(), Error> {
-        let pool_size = pool_size as i16;
-        match scope {
-            Scope::Server(server_id) => {
-                let new_pool = server_pool::ActiveModel {
-                    server_id: Set(server_id.get() as i64),
-                    name: Set(pool_name),
-                    original_size: Set(pool_size),
-                    current_size: Set(pool_size),
-                    ..Default::default()
-                };
-                new_pool.save(&self.conn).await?;
-            }
-            Scope::Channel(channel_id) => {
-                let new_pool = channel_pool::ActiveModel {
-                    channel_id: Set(channel_id.get() as i64),
-                    name: Set(pool_name),
-                    original_size: Set(pool_size),
-                    current_size: Set(pool_size),
-                    ..Default::default()
-                };
-                new_pool.save(&self.conn).await?;
-            }
-        };
-        Ok(())
+    pub async fn create(&self, scope: Scope, pool_name: String, pool_size: u8) -> Result<(), Error> {
+        if let Some(_existing_pool) = self.get(scope, &pool_name).await? {
+            Err(anyhow!("Pool \"{pool_name}\" already exists!").into())
+        } else {
+            let pool_size = pool_size as i16;
+            match scope {
+                Scope::Server(server_id) => {
+                    let new_pool = server_pool::ActiveModel {
+                        server_id: Set(server_id.get() as i64),
+                        name: Set(pool_name),
+                        original_size: Set(pool_size),
+                        current_size: Set(pool_size),
+                        ..Default::default()
+                    };
+                    new_pool.insert(&self.conn).await?;
+                }
+                Scope::Channel(channel_id) => {
+                    let new_pool = channel_pool::ActiveModel {
+                        channel_id: Set(channel_id.get() as i64),
+                        name: Set(pool_name),
+                        original_size: Set(pool_size),
+                        current_size: Set(pool_size),
+                        ..Default::default()
+                    };
+                    new_pool.insert(&self.conn).await?;
+                }
+            };
+            Ok(())
+        }
+    }
+    pub async fn delete(&self, scope: Scope, pool_name: &str) -> Result<Pool, Error> {
+        let pool = self
+            .get(scope, pool_name)
+            .await?
+            .ok_or_else(|| anyhow!("Pool {pool_name} not found"))?;
+        pool.delete(&self.conn).await
     }
 }
 
