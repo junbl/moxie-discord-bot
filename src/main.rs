@@ -1,50 +1,143 @@
-use std::any::Any;
-use std::sync::{Arc, RwLock};
-
 use anyhow::{anyhow, Context as _};
-use itertools::Itertools;
+use entity::{channel_pool, server_pool};
 use poise::serenity_prelude::{ClientBuilder, GatewayIntents};
-use rand::{thread_rng, Rng};
+use pool::Scope;
 use rolls::{Pool, Roll, Rolls};
+use sea_orm::ActiveValue::{Set, Unchanged};
 use sea_orm::DatabaseConnection;
-use serenity::all::{ChannelId, ChannelType, GuildId};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
 use shuttle_runtime::SecretStore;
 use shuttle_serenity::ShuttleSerenity;
-use std::collections::HashMap;
 
+mod pool;
 mod rolls;
 
-// #[derive(Default)]
+/// User data, which is stored and accessible in all command invocations
+pub struct Data {
+    pools: Pools,
+    rolls: Rolls,
+}
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
+pub type Context<'a> = poise::Context<'a, Data, Error>;
+
+enum PoolId {
+    Server(i32),
+    Channel(i32),
+}
+
+struct PoolInDb {
+    pool: Pool,
+    id: PoolId,
+}
+impl PoolInDb {
+    pub fn new(dice: u8, id: PoolId) -> Self {
+        Self {
+            pool: Pool::new(dice),
+            id,
+        }
+    }
+    pub async fn roll(
+        &mut self,
+        conn: &DatabaseConnection,
+        rolls: &Rolls,
+    ) -> Result<Vec<Roll>, anyhow::Error> {
+        let rolls = self.pool.roll(rolls);
+        match self.id {
+            PoolId::Server(id) => {
+                server_pool::ActiveModel {
+                    id: Unchanged(id),
+                    current_size: Set(self.pool.dice()),
+                    updated: Set(chrono::Utc::now()),
+                    ..Default::default()
+                }
+                .update(conn)
+                .await?;
+            }
+            PoolId::Channel(id) => {
+                channel_pool::ActiveModel {
+                    id: Unchanged(id),
+                    current_size: Set(self.pool.dice()),
+                    updated: Set(chrono::Utc::now()),
+                    ..Default::default()
+                }
+                .update(conn)
+                .await?;
+            }
+        }
+        Ok(rolls)
+    }
+}
+
 struct Pools {
-    inner: DatabaseConnection,
+    conn: DatabaseConnection,
 }
 
 impl Pools {
-    pub fn new(inner: DatabaseConnection) -> Self {
-        Self { inner }
+    pub fn new(conn: DatabaseConnection) -> Self {
+        Self { conn }
     }
-    pub fn roll_pool<R: Rng + ?Sized>(
-        &mut self,
-        guild_id: GuildId,
+    pub async fn roll_pool(
+        &self,
+        scope: Scope,
         pool_name: &str,
-        rng: &mut R,
         rolls: &Rolls,
     ) -> Result<Option<Vec<Roll>>, anyhow::Error> {
-        let guild_id = guild_id.to_string();
-        let mut server_pools: HashMap<String, Pool> = todo!();
-        let Some(pool) = server_pools.get_mut(pool_name) else {
+        let Some(mut pool) = self.get_pool(scope, pool_name).await? else {
             return Ok(None);
         };
-        let rolls = pool.roll(rng, rolls);
-        // self.inner.save(&guild_id, server_pools)?;
+        let rolls = pool.roll(&self.conn, rolls).await?;
         Ok(Some(rolls))
     }
-    pub async fn get_channel_pool(
+    pub async fn get_pool(
         &self,
-        channel_id: ChannelId,
+        scope: Scope,
         pool_name: &str,
-    ) -> anyhow::Result<Pool> {
-        todo!();
+    ) -> anyhow::Result<Option<PoolInDb>> {
+        let conn = &self.conn;
+        Ok(match scope {
+            Scope::Server(server_id) => server_pool::Entity::find()
+                .filter(server_pool::Column::ServerId.eq(server_id.get()))
+                .filter(server_pool::Column::Name.eq(pool_name))
+                .one(conn)
+                .await?
+                .map(|pool| PoolInDb::new(pool.current_size, PoolId::Server(pool.id))),
+            Scope::Channel(channel_id) => channel_pool::Entity::find()
+                .filter(channel_pool::Column::ChannelId.eq(channel_id.get()))
+                .filter(channel_pool::Column::Name.eq(pool_name))
+                .one(conn)
+                .await?
+                .map(|pool| PoolInDb::new(pool.current_size, PoolId::Channel(pool.id))),
+        })
+    }
+    pub async fn new_pool(
+        &self,
+        scope: Scope,
+        pool_name: String,
+        pool_size: u8,
+    ) -> Result<(), Error> {
+        match scope {
+            Scope::Server(server_id) => {
+                let new_pool = server_pool::ActiveModel {
+                    server_id: Set(server_id.get() as i64),
+                    name: Set(pool_name),
+                    original_size: Set(pool_size),
+                    current_size: Set(pool_size),
+                    ..Default::default()
+                };
+                new_pool.save(&self.conn).await?;
+            }
+            Scope::Channel(channel_id) => {
+                let new_pool = channel_pool::ActiveModel {
+                    channel_id: Set(channel_id.get() as i64),
+                    name: Set(pool_name),
+                    original_size: Set(pool_size),
+                    current_size: Set(pool_size),
+                    ..Default::default()
+                };
+                new_pool.save(&self.conn).await?;
+            }
+        };
+        Ok(())
     }
 }
 
@@ -62,13 +155,6 @@ impl Pools {
 //     }
 // }
 
-struct Data {
-    pools: Pools,
-    rolls: Rolls,
-} // User data, which is stored and accessible in all command invocations
-type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::Context<'a, Data, Error>;
-
 /// Responds with "world!"
 #[poise::command(slash_command)]
 async fn hello(ctx: Context<'_>) -> Result<(), Error> {
@@ -80,72 +166,13 @@ async fn hello(ctx: Context<'_>) -> Result<(), Error> {
 #[poise::command(slash_command)]
 async fn pooln(
     ctx: Context<'_>,
-    #[description = "Number of dice in the pool"] num_dice: usize,
+    #[description = "Number of dice in the pool"] num_dice: u8,
 ) -> Result<(), Error> {
     let mut pool = Pool::new(num_dice);
-    let message = {
-        let mut rng = thread_rng();
-        let rolls = pool.roll(&mut rng, &ctx.data().rolls);
-        format!(
-            "rolls: {}\nremaining dice: {}",
-            rolls.iter().map(ToString::to_string).join(" "),
-            pool.dice()
-        )
-    };
+    let rolls = pool.roll(&ctx.data().rolls);
 
-    ctx.say(message).await?;
-    Ok(())
-}
-/// Entrypoint for interacting with pools.
-#[poise::command(
-    prefix_command,
-    slash_command,
-    subcommands("new", "roll", "reset", "delete", "adddice")
-)]
-async fn pool(_: Context<'_>) -> Result<(), Error> {
-    Ok(())
-}
-#[poise::command(prefix_command, slash_command)]
-async fn new(
-    ctx: Context<'_>,
-    #[description = "Name of the pool"] pool: String,
-) -> Result<(), Error> {
-    let guild_id = ctx.guild_id().map(|gid| gid.get());
-    let channel_id = ctx.channel_id().get();
-    ctx.say("world!").await?;
-    Ok(())
-}
-#[poise::command(prefix_command, slash_command)]
-async fn roll(
-    ctx: Context<'_>,
-    #[description = "Name of the pool"] pool: String,
-) -> Result<(), Error> {
-    ctx.guild_id();
-    ctx.say("world!").await?;
-    Ok(())
-}
-#[poise::command(prefix_command, slash_command)]
-async fn reset(
-    ctx: Context<'_>,
-    #[description = "Name of the pool"] pool: String,
-) -> Result<(), Error> {
-    ctx.say("world!").await?;
-    Ok(())
-}
-#[poise::command(prefix_command, slash_command)]
-async fn delete(
-    ctx: Context<'_>,
-    #[description = "Name of the pool"] pool: String,
-) -> Result<(), Error> {
-    ctx.say("world!").await?;
-    Ok(())
-}
-#[poise::command(prefix_command, slash_command)]
-async fn adddice(
-    ctx: Context<'_>,
-    #[description = "Name of the pool"] pool: String,
-) -> Result<(), Error> {
-    ctx.say("world!").await?;
+    ctx.say(crate::pool::print_pool_results(&rolls, pool))
+        .await?;
     Ok(())
 }
 
@@ -164,7 +191,7 @@ async fn main(
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![hello(), pool(), pooln()],
+            commands: vec![hello(), pool::pool(), pooln()],
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {

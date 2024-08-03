@@ -34,6 +34,18 @@ impl MigrationTrait for Migration {
                             .small_unsigned()
                             .not_null(),
                     )
+                    .col(
+                        ColumnDef::new(ServerPool::Created)
+                            .timestamp_with_time_zone()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(ServerPool::Updated)
+                            .timestamp_with_time_zone()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
                     .take(),
             )
             .await?;
@@ -65,6 +77,18 @@ impl MigrationTrait for Migration {
                             .small_unsigned()
                             .not_null(),
                     )
+                    .col(
+                        ColumnDef::new(ChannelPool::Created)
+                            .timestamp_with_time_zone()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(ChannelPool::Updated)
+                            .timestamp_with_time_zone()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
                     .take(),
             )
             .await?;
@@ -90,6 +114,8 @@ enum ServerPool {
     Name,
     OriginalSize,
     CurrentSize,
+    Created,
+    Updated,
 }
 
 #[derive(DeriveIden)]
@@ -100,4 +126,6 @@ enum ChannelPool {
     Name,
     OriginalSize,
     CurrentSize,
+    Created,
+    Updated,
 }

@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::{thread_rng, Rng};
 use rand_distr::{Distribution, Uniform};
 use serde::{Deserialize, Serialize};
 
@@ -43,13 +43,6 @@ impl Rolls {
         if num_dice == 0 {
             self.roll_n(rng, 2).min().expect("pool has two elements")
         } else {
-            // roll_n_dice(num_dice).try_fold(Roll::Failure,|r1, r2| {
-            //     if r1 == Roll::Success && r2 == Roll::Success {
-            //         ControlFlow::Break(Roll::CriticalSuccess)
-            //      } else {
-            //         ControlFlow::Continue(r1.max(r2))
-            //     }
-            // });
             let mut current_max = Roll::Grim(1);
             for roll in self.roll_n(rng, num_dice) {
                 if current_max.is_perfect() && roll.is_perfect() {
@@ -76,19 +69,22 @@ impl Distribution<Roll> for Rolls {
 }
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Pool {
-    dice: usize,
+    dice: u8,
 }
 impl Pool {
-    pub fn new(dice: usize) -> Self {
+    pub fn new(dice: u8) -> Self {
         Self { dice }
     }
-    pub fn dice(&self) -> usize {
+    pub fn dice(&self) -> u8 {
         self.dice
     }
-    pub fn roll<R: Rng + ?Sized>(&mut self, rng: &mut R, rolls: &Rolls) -> Vec<Roll> {
+    pub fn roll(&mut self, rolls: &Rolls) -> Vec<Roll> {
+        let mut rng = thread_rng();
+        self.roll_rng(&mut rng, rolls)
+    }
+    pub fn roll_rng<R: Rng + ?Sized>(&mut self, rng: &mut R, rolls: &Rolls) -> Vec<Roll> {
         let rolls: Vec<_> = rolls
-            .sample_iter(rng)
-            .take(self.dice)
+            .roll_n(rng, self.dice as usize)
             .inspect(|roll| {
                 if roll.is_grim() {
                     self.dice -= 1;

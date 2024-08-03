@@ -11,6 +11,8 @@ pub struct Model {
     pub name: String,
     pub original_size: u8,
     pub current_size: u8,
+    pub created: DateTimeUtc,
+    pub updated: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
