@@ -7,7 +7,10 @@ use serenity::{
 };
 use thiserror::Error;
 
-use crate::{rolls::{Pool, Roll}, Context, Error};
+use crate::{
+    rolls::{Pool, Roll},
+    Context, Error,
+};
 
 pub enum Scope {
     Server(GuildId),
@@ -79,7 +82,7 @@ async fn new(
     scope: Option<Scope>,
 ) -> Result<(), Error> {
     let scope = scope.unwrap_or_else(|| Scope::Channel(ctx.channel_id()));
-    let message = format!("Created new pool {name} with {num_dice} dice!");
+    let message = format!("Created new pool \"{name}\" with {num_dice} dice!");
     ctx.data().pools.new_pool(scope, name, num_dice).await?;
     ctx.say(message).await?;
     Ok(())
@@ -100,7 +103,7 @@ async fn roll(
             .collect()
     };
     let pool_name = pool_name.as_str();
-    let mut pool = None;
+    let mut rolls = None;
     for scope in scopes_to_check {
         if let Some(p) = ctx
             .data()
@@ -110,12 +113,16 @@ async fn roll(
             .ok()
             .flatten()
         {
-            let _ = pool.insert(p);
+            let _ = rolls.insert(p);
             break;
         }
     }
-    ctx.say("world!").await?;
-    Ok(())
+    if let Some((pool, rolls)) = rolls {
+        ctx.say(print_pool_results(&rolls, pool.pool)).await?;
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("Pool {pool_name} not found!").into())
+    }
 }
 #[poise::command(prefix_command, slash_command)]
 async fn reset(

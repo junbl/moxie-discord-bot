@@ -81,12 +81,12 @@ impl Pools {
         scope: Scope,
         pool_name: &str,
         rolls: &Rolls,
-    ) -> Result<Option<Vec<Roll>>, anyhow::Error> {
+    ) -> Result<Option<(PoolInDb, Vec<Roll>)>, anyhow::Error> {
         let Some(mut pool) = self.get_pool(scope, pool_name).await? else {
             return Ok(None);
         };
         let rolls = pool.roll(&self.conn, rolls).await?;
-        Ok(Some(rolls))
+        Ok(Some((pool, rolls)))
     }
     pub async fn get_pool(
         &self,
