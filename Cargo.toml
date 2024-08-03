@@ -7,7 +7,7 @@ edition = "2021"
 members = [".", "entity", "migration"]
 
 [dependencies]
-sea-orm = { workspace = true, features = ["with-chrono"] }
+sea-orm = { workspace = true }
 anyhow = "1.0.66"
 entity = { path = "entity" }
 itertools = "0.13.0"
@@ -32,8 +32,9 @@ thiserror = "1.0.63"
 chrono = "0.4.38"
 
 [workspace.dependencies]
-sea-orm = { version = "0.12.15", default-features = false, features = [
+sea-orm = { version = "1", default-features = false, features = [
     "sqlx-postgres",
     "runtime-tokio",
     "macros",
+    "with-chrono",
 ] }
