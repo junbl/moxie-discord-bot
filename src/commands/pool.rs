@@ -1,61 +1,10 @@
-use std::future::ready;
-
 use itertools::Itertools;
-use serenity::{
-    all::{ArgumentConvert, CacheHttp, ChannelId, GuildId},
-    FutureExt,
-};
-use thiserror::Error;
 
 use crate::{
+    commands::Scope,
     rolls::{Pool, Roll},
     Context, Error,
 };
-
-#[derive(Clone, Copy)]
-pub enum Scope {
-    Server(GuildId),
-    Channel(ChannelId),
-    // User
-}
-#[derive(Debug, Error)]
-pub enum ScopeParseError {
-    #[error("couldn't parse input: {0}")]
-    ParseError(String),
-    #[error("no channel id found")]
-    NoChannelId,
-    #[error("no server id found")]
-    NoServerId,
-}
-impl ArgumentConvert for Scope {
-    type Err = ScopeParseError;
-
-    #[must_use]
-    #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
-    fn convert<'life0, 'async_trait>(
-        _ctx: impl 'async_trait + CacheHttp,
-        guild_id: Option<GuildId>,
-        channel_id: Option<ChannelId>,
-        s: &'life0 str,
-    ) -> ::core::pin::Pin<
-        Box<
-            dyn ::core::future::Future<Output = Result<Self, Self::Err>>
-                + ::core::marker::Send
-                + 'async_trait,
-        >,
-    >
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        ready(match s {
-            "server" => guild_id.ok_or(Self::Err::NoServerId).map(Self::Server),
-            "channel" => channel_id.ok_or(Self::Err::NoChannelId).map(Self::Channel),
-            _ => Err(Self::Err::ParseError(s.to_string())),
-        })
-        .boxed()
-    }
-}
 
 pub fn print_pool_results(rolls: &[Roll], pool: Pool) -> String {
     format!(
@@ -73,7 +22,7 @@ fn scope_or_default(opt_scope: Option<Scope>, ctx: &Context) -> Scope {
 #[poise::command(
     prefix_command,
     slash_command,
-    subcommands("new", "roll", "reset", "delete", "adddice", "check")
+    subcommands("new", "roll", "reset", "delete", "set", "check")
 )]
 pub async fn pool(_: Context<'_>) -> Result<(), Error> {
     Ok(())
@@ -99,7 +48,8 @@ async fn new(
 async fn roll(
     ctx: Context<'_>,
     #[description = "Name of the pool"] pool_name: String,
-    #[description = "Where to look for the pool"] scope: Option<Scope>,
+    #[description = "Where to look for this pool (either channel or server, defaults to channel)"]
+    scope: Option<Scope>,
 ) -> Result<(), Error> {
     let scopes_to_check = if let Some(scope) = scope {
         vec![scope]
@@ -139,17 +89,24 @@ async fn roll(
 #[poise::command(prefix_command, slash_command)]
 async fn reset(
     ctx: Context<'_>,
-    #[description = "Name of the pool"] pool: String,
-    #[description = "Where to look for the pool"] scope: Option<Scope>,
+    #[description = "Name of the pool"] pool_name: String,
+    #[description = "Where to look for this pool (either channel or server, defaults to channel)"]
+    scope: Option<Scope>,
 ) -> Result<(), Error> {
-    ctx.say("world!").await?;
+    ctx.data()
+        .pools
+        .reset(scope_or_default(scope, &ctx), &pool_name)
+        .await?;
+    ctx.say("Reset pool \"{pool_name}\" back to {num_dice} dice!")
+        .await?;
     Ok(())
 }
 #[poise::command(prefix_command, slash_command)]
 async fn delete(
     ctx: Context<'_>,
     #[description = "Name of the pool"] pool_name: String,
-    #[description = "Where to look for the pool"] scope: Option<Scope>,
+    #[description = "Where to look for this pool (either channel or server, defaults to channel)"]
+    scope: Option<Scope>,
 ) -> Result<(), Error> {
     let deleted_pool = ctx
         .data()
@@ -165,10 +122,14 @@ async fn delete(
     Ok(())
 }
 #[poise::command(prefix_command, slash_command)]
-async fn adddice(
+async fn set(
     ctx: Context<'_>,
-    #[description = "Name of the pool"] pool: String,
-    #[description = "Where to look for the pool"] scope: Option<Scope>,
+    #[description = "Name of the pool"] pool_name: String,
+    #[description = "Where to look for this pool (either channel or server, defaults to channel)"]
+    scope: Option<Scope>,
+    #[description = "Number of dice to set this pool to - can be a number like \"6\", or \
+        you can add or subtract with an expression like \"+1\" or \"-2\""]
+    num_dice: String,
 ) -> Result<(), Error> {
     ctx.say("world!").await?;
     Ok(())
@@ -176,9 +137,11 @@ async fn adddice(
 #[poise::command(prefix_command, slash_command)]
 async fn check(
     ctx: Context<'_>,
-    #[description = "Name of the pool"] pool: String,
-    #[description = "Where to look for the pool"] scope: Option<Scope>,
+    #[description = "Name of the pool"] pool_name: String,
+    #[description = "Where to look for this pool (either channel or server, defaults to channel)"]
+    scope: Option<Scope>,
 ) -> Result<(), Error> {
+    let pool = ctx.data().pools.get(scope_or_default(scope, &ctx), &pool_name).await?;
     ctx.say("world!").await?;
     Ok(())
 }
