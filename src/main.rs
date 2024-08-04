@@ -31,7 +31,7 @@ async fn main(
         .context("'DISCORD_TOKEN' was not found")?;
     let conn = sea_orm::Database::connect(conn_str)
         .await
-        .map_err(|e| anyhow!(e))?;
+        .map_err(shuttle_runtime::CustomError::new)?;
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
@@ -49,7 +49,9 @@ async fn main(
         })
         .build();
 
-    let client = ClientBuilder::new(discord_token, GatewayIntents::non_privileged())
+    let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
+
+    let client = ClientBuilder::new(discord_token, intents)
         .framework(framework)
         .await
         .map_err(shuttle_runtime::CustomError::new)?;
