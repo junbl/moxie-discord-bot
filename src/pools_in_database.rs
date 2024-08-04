@@ -60,6 +60,9 @@ impl PoolInDb {
             original_size,
         }
     }
+    pub fn original_dice(&self) -> u8 {
+        self.original_dice
+    }
     pub async fn roll(
         &mut self,
         conn: &DatabaseConnection,

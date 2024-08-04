@@ -141,7 +141,17 @@ async fn check(
     #[description = "Where to look for this pool (either channel or server, defaults to channel)"]
     scope: Option<Scope>,
 ) -> Result<(), Error> {
-    let pool = ctx.data().pools.get(scope_or_default(scope, &ctx), &pool_name).await?;
-    ctx.say("world!").await?;
+    let pool = ctx
+        .data()
+        .pools
+        .get(scope_or_default(scope, &ctx), &pool_name)
+        .await?;
+    ctx.say(format!(
+        "Pool \"{}\" currently has {}/{} dice remaining!",
+        pool_name,
+        pool.pool.dice(),
+        pool.original_dice(),
+    ))
+    .await?;
     Ok(())
 }
