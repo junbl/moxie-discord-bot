@@ -199,16 +199,18 @@ mod tests {
             ("-3", SetValue::Subtract(3)),
             ("+0", SetValue::Add(0)),
             ("-004", SetValue::Subtract(4)),
+            ("++1", SetValue::Add(1)),
+            ("-+1", SetValue::Subtract(1)),
         ];
         for (val, expected) in good {
             assert_eq!(val.parse::<SetValue>().unwrap(), expected);
         }
         let bad = [
-            "+-1", "--12", "++1", "-+1", "-1+", "-1-", "256", "+256", "+1.0",
+            "+-1", "--12", "+++1", "---1", "-1+", "-1-", "256", "+256", "+1.0",
         ];
         for val in bad {
             let res = val.parse::<SetValue>();
-            assert!(res.is_err(), "{res:?}");
+            assert!(res.is_err(), "val: {val}, result: {res:?}");
         }
     }
 }
