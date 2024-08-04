@@ -169,8 +169,7 @@ async fn set(
     #[description = "Name of the pool"] pool_name: String,
     #[description = "Where to look for this pool (either channel or server, defaults to channel)"]
     scope: Option<Scope>,
-    #[description = "Number of dice to set this pool to - can be a number like \"6\", or you can \
-        add or subtract with an expression like \"+1\" or \"-2\""]
+    #[description = "Set to a value like \"6\", add like \"+1\", or subtract like \"-2\""]
     num_dice: SetValue,
 ) -> Result<(), Error> {
     info!("Received command: set");

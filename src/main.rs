@@ -35,7 +35,11 @@ async fn main(
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![hello(), pool(), pooln()],
+            commands: vec![
+                hello(),
+                pool(),
+                pooln(),
+            ],
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
@@ -49,9 +53,9 @@ async fn main(
         })
         .build();
 
-    let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
+    // let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
 
-    let client = ClientBuilder::new(discord_token, intents)
+    let client = ClientBuilder::new(discord_token, GatewayIntents::non_privileged())
         .framework(framework)
         .await
         .map_err(shuttle_runtime::CustomError::new)?;
