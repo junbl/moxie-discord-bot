@@ -1,3 +1,5 @@
+//! This module contains the code for performing operations on pools in the database.
+
 use anyhow::anyhow;
 use entity::{channel_pool, server_pool};
 use sea_orm::ActiveValue::{Set, Unchanged};
@@ -60,8 +62,8 @@ impl PoolInDb {
             original_size,
         }
     }
-    pub fn original_dice(&self) -> u8 {
-        self.original_dice
+    pub fn original_size(&self) -> u8 {
+        self.original_size
     }
     pub async fn roll(
         &mut self,
@@ -179,13 +181,13 @@ impl Pools {
             )
             .exec(&self.conn)
             .await;
-        let channel_pool = channel_pool::Entity::delete_many()
+        let channel_res = channel_pool::Entity::delete_many()
             .filter(
                 channel_pool::Column::Updated.lt(chrono::Utc::now() - chrono::Duration::days(30)),
             )
             .exec(&self.conn)
             .await;
-        server_res.and(channel_pool).map(|_| ())
+        server_res.and(channel_res).map(|_| ())
     }
 
     pub async fn reset(&self, scope: Scope, pool_name: &str) -> Result<(), Error> {

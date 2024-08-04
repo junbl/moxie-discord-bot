@@ -1,3 +1,6 @@
+//! This module is for code relating to rolling the dice - generating random values and mapping
+//! that to success values.
+
 use rand::{thread_rng, Rng};
 use rand_distr::{Distribution, Uniform};
 use serde::{Deserialize, Serialize};

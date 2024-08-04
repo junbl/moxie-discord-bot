@@ -1,3 +1,5 @@
+//! The `pool` command, which offers operations to create, read, update, and delete diminishing
+//! pools.
 use itertools::Itertools;
 
 use crate::{
@@ -150,7 +152,7 @@ async fn check(
         "Pool \"{}\" currently has {}/{} dice remaining!",
         pool_name,
         pool.pool.dice(),
-        pool.original_dice(),
+        pool.original_size(),
     ))
     .await?;
     Ok(())
