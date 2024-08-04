@@ -213,17 +213,17 @@ impl Pools {
         .map_ok(|_| ()))?;
         Ok(new_size)
     }
-    pub async fn reset(&self, scope: Scope, pool_name: &str) -> Result<(), Error> {
+    pub async fn reset(&self, scope: Scope, pool_name: &str) -> Result<u8, Error> {
         // should transaction but &self not 'static, but op is idempotent so nbd
         let pool = self.get(scope, pool_name).await?;
-        match_pool_id!(pool.id, |id| ActiveModel {
+        let original_size = match_pool_id!(pool.id, |id| ActiveModel {
             id: Unchanged(id),
             current_size: Set(pool.original_size as i16),
             updated: Set(chrono::Utc::now()),
             ..Default::default()
         }
         .update(&self.conn)
-        .map_ok(|_| ()))?;
-        Ok(())
+        .map_ok(|_| pool.original_size))?;
+        Ok(original_size)
     }
 }

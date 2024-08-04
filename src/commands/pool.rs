@@ -4,10 +4,25 @@ use itertools::Itertools;
 use tracing::{info, instrument};
 
 use crate::{
-    commands::Scope,
+    commands::{fmt_dice, Scope},
     rolls::{Pool, Roll},
     Context, Error,
 };
+
+/// Testing subcommands
+#[poise::command(slash_command, prefix_command, subcommands("subcommand"))]
+pub async fn debug(_: Context<'_>) -> Result<(), crate::Error> {
+    Ok(())
+}
+
+/// Say hi!
+#[poise::command(slash_command, prefix_command)]
+#[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
+pub async fn subcommand(ctx: Context<'_>, arg: String) -> Result<(), crate::Error> {
+    info!("Received command: debug subcommand");
+    ctx.say(format!("Hi there! {arg}")).await?;
+    Ok(())
+}
 
 pub fn print_pool_results(rolls: &[Roll], pool: Pool) -> String {
     format!(
@@ -25,9 +40,9 @@ fn scope_or_default(opt_scope: Option<Scope>, ctx: &Context) -> Scope {
 
 /// Entrypoint for interacting with pools.
 #[poise::command(
-    prefix_command,
     slash_command,
-    // aliases("p"),
+    prefix_command,
+    aliases("p"),
     subcommands("new", "roll", "reset", "delete", "set", "check")
 )]
 pub async fn pool(_: Context<'_>) -> Result<(), Error> {
@@ -40,12 +55,10 @@ pub async fn new(
     ctx: Context<'_>,
     #[description = "Number of dice to put in the pool"] num_dice: u8,
     #[description = "Name of the pool"] name: String,
-    #[description = "Where the pool is stored (channel or server, default channel)"] scope: Option<
-        Scope,
-    >,
+    #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: new");
-    let message = format!("Created new pool \"{name}\" with {num_dice} dice!");
+    let message = format!("Created new pool \"{name}\" with {}!", fmt_dice(num_dice));
     ctx.data()
         .pools
         .create(scope_or_default(scope, &ctx), name, num_dice)
@@ -60,9 +73,7 @@ pub async fn new(
 pub async fn roll(
     ctx: Context<'_>,
     #[description = "Name of the pool"] pool_name: String,
-    #[description = "Where the pool is stored (channel or server, default channel)"] scope: Option<
-        Scope,
-    >,
+    #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: roll");
     let scopes_to_check = if let Some(scope) = scope {
@@ -90,8 +101,8 @@ pub async fn roll(
     }
     if let Some((pool, rolls)) = rolls {
         ctx.say(format!(
-            "Rolled pool \"{pool_name}\" with {} dice\n{}",
-            rolls.len(),
+            "Rolled pool \"{pool_name}\" with {}\n{}",
+            fmt_dice(rolls.len() as u8),
             print_pool_results(&rolls, pool.pool)
         ))
         .await?;
@@ -100,23 +111,25 @@ pub async fn roll(
         Err(anyhow::anyhow!("Pool {pool_name} not found!").into())
     }
 }
-/// Sets a pool's current dice back to its starting dice.
+/// Sets a pool's current dice back to the number of dice it started with.
 #[poise::command(prefix_command, slash_command)]
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn reset(
     ctx: Context<'_>,
     #[description = "Name of the pool"] pool_name: String,
-    #[description = "Where the pool is stored (channel or server, default channel)"] scope: Option<
-        Scope,
-    >,
+    #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: reset");
-    ctx.data()
+    let num_dice = ctx
+        .data()
         .pools
         .reset(scope_or_default(scope, &ctx), &pool_name)
         .await?;
-    ctx.say("Reset pool \"{pool_name}\" back to {num_dice} dice!")
-        .await?;
+    ctx.say(format!(
+        "Reset pool \"{pool_name}\" back to {}!",
+        fmt_dice(num_dice)
+    ))
+    .await?;
     Ok(())
 }
 /// Deletes a pool.
@@ -125,9 +138,7 @@ pub async fn reset(
 pub async fn delete(
     ctx: Context<'_>,
     #[description = "Name of the pool"] pool_name: String,
-    #[description = "Where the pool is stored (channel or server, default channel)"] scope: Option<
-        Scope,
-    >,
+    #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: delete");
     let deleted_pool = ctx
@@ -137,8 +148,59 @@ pub async fn delete(
         .await?;
 
     ctx.say(format!(
-        "Deleted pool \"{pool_name}\" (had {} dice left)",
-        deleted_pool.dice(),
+        "Deleted pool \"{pool_name}\" (had {} left)",
+        fmt_dice(deleted_pool.dice()),
+    ))
+    .await?;
+    Ok(())
+}
+
+/// Manually change the amount of dice in a pool.
+///
+/// To set to `n` dice, use `set {pool} n`.
+/// To add `n` dice to the pool, use `set {pool} +n`.
+/// To remove `n` dice from the pool, use `set {pool} -n`.
+#[poise::command(prefix_command, slash_command)]
+#[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
+pub async fn set(
+    ctx: Context<'_>,
+    #[description = "Name of the pool"] pool_name: String,
+    #[description = "Add like \"+1\", subtract like \"-2\", or set like \"6\""]
+    num_dice: SetValue,
+    #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
+) -> Result<(), Error> {
+    info!("Received command: set");
+    let new_size = ctx
+        .data()
+        .pools
+        .set(scope_or_default(scope, &ctx), &pool_name, num_dice)
+        .await?;
+    ctx.say(format!(
+        "Pool \"{pool_name}\" now has {}!",
+        fmt_dice(new_size),
+    ))
+    .await?;
+    Ok(())
+}
+/// Checks the current number of dice in a pool without rolling it.
+#[poise::command(prefix_command, slash_command)]
+#[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
+pub async fn check(
+    ctx: Context<'_>,
+    #[description = "Name of the pool"] pool_name: String,
+    #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
+) -> Result<(), Error> {
+    info!("Received command: check");
+    let pool = ctx
+        .data()
+        .pools
+        .get(scope_or_default(scope, &ctx), &pool_name)
+        .await?;
+    ctx.say(format!(
+        "Pool \"{}\" currently has {}/{} remaining!",
+        pool_name,
+        pool.pool.dice(),
+        fmt_dice(pool.original_size()),
     ))
     .await?;
     Ok(())
@@ -165,53 +227,6 @@ impl std::str::FromStr for SetValue {
         let value = value.parse::<u8>()?;
         Ok(variant(value))
     }
-}
-/// Manually change the amount of dice in a pool.
-#[poise::command(prefix_command, slash_command)]
-#[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
-pub async fn set(
-    ctx: Context<'_>,
-    #[description = "Name of the pool"] pool_name: String,
-    // #[description = "Set to a value like \"6\", add like \"+1\", or subtract like \"-2\""]
-    #[description = "Value to set to"] num_dice: SetValue,
-    #[description = "Where the pool is stored (channel or server, default channel)"] scope: Option<
-        Scope,
-    >,
-) -> Result<(), Error> {
-    info!("Received command: set");
-    let new_size = ctx
-        .data()
-        .pools
-        .set(scope_or_default(scope, &ctx), &pool_name, num_dice)
-        .await?;
-    ctx.say(format!("Set pool \"{pool_name}\" to {new_size} dice!"))
-        .await?;
-    Ok(())
-}
-/// Checks the current number of dice in a pool without rolling it.
-#[poise::command(prefix_command, slash_command)]
-#[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
-pub async fn check(
-    ctx: Context<'_>,
-    #[description = "Name of the pool"] pool_name: String,
-    #[description = "Where the pool is stored (channel or server, default channel)"] scope: Option<
-        Scope,
-    >,
-) -> Result<(), Error> {
-    info!("Received command: check");
-    let pool = ctx
-        .data()
-        .pools
-        .get(scope_or_default(scope, &ctx), &pool_name)
-        .await?;
-    ctx.say(format!(
-        "Pool \"{}\" currently has {}/{} dice remaining!",
-        pool_name,
-        pool.pool.dice(),
-        pool.original_size(),
-    ))
-    .await?;
-    Ok(())
 }
 
 #[cfg(test)]

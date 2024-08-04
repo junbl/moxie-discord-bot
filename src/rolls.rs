@@ -25,7 +25,6 @@ impl Roll {
     }
 }
 
-#[allow(dead_code)]
 pub fn roll_result(rolls: impl IntoIterator<Item = Roll>) -> Roll {
     let mut current_max = Roll::Grim(1);
     for roll in rolls {
