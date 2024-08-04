@@ -58,6 +58,7 @@ impl ArgumentConvert for Scope {
 /// Health check
 #[poise::command(slash_command)]
 pub async fn hello(ctx: Context<'_>) -> Result<(), crate::Error> {
+    tracing::info!("Received command: hello");
     ctx.say("<3").await?;
     Ok(())
 }
