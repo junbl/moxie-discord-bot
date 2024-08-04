@@ -23,15 +23,15 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Context<'a> = poise::Context<'a, Data, Error>;
 
 /// Testing subcommands
-#[poise::command(slash_command, prefix_command, subcommands("there"))]
-pub async fn hi(_: Context<'_>) -> Result<(), crate::Error> {
+#[poise::command(slash_command, prefix_command, subcommands("subcommand"))]
+pub async fn debug(_: Context<'_>) -> Result<(), crate::Error> {
     Ok(())
 }
 
 /// Say hi!
 #[poise::command(slash_command, prefix_command)]
-pub async fn there(ctx: Context<'_>) -> Result<(), crate::Error> {
-    ctx.say("Hi there!").await?;
+pub async fn subcommand(ctx: Context<'_>, arg: String) -> Result<(), crate::Error> {
+    ctx.say(format!("Hi there! {arg}")).await?;
     Ok(())
 }
 #[shuttle_runtime::main]
@@ -49,12 +49,7 @@ async fn main(
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![
-                hello(),
-                pool(),
-                pooln(),
-                hi(),
-            ],
+            commands: vec![hello(), pool(), pooln(), debug()],
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
@@ -70,6 +65,7 @@ async fn main(
 
     // let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
 
+    // let client = ClientBuilder::new(discord_token, intents)
     let client = ClientBuilder::new(discord_token, GatewayIntents::non_privileged())
         .framework(framework)
         .await

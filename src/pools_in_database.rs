@@ -95,7 +95,6 @@ impl PoolInDb {
     }
 }
 
-
 pub struct Pools {
     conn: DatabaseConnection,
 }

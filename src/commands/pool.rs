@@ -38,12 +38,11 @@ pub async fn pool(_: Context<'_>) -> Result<(), Error> {
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn new(
     ctx: Context<'_>,
-    #[description = "Number of dice to put in the pool"]
-    num_dice: u8,
-    #[description = "Name of the pool"]
-    name: String,
-    #[description = "Where the pool is stored (channel or server, default channel)"]
-    scope: Option<Scope>,
+    #[description = "Number of dice to put in the pool"] num_dice: u8,
+    #[description = "Name of the pool"] name: String,
+    #[description = "Where the pool is stored (channel or server, default channel)"] scope: Option<
+        Scope,
+    >,
 ) -> Result<(), Error> {
     info!("Received command: new");
     let message = format!("Created new pool \"{name}\" with {num_dice} dice!");
@@ -60,10 +59,10 @@ pub async fn new(
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn roll(
     ctx: Context<'_>,
-    #[description = "Name of the pool"]
-    pool_name: String,
-    #[description = "Where the pool is stored (channel or server, default channel)"]
-    scope: Option<Scope>,
+    #[description = "Name of the pool"] pool_name: String,
+    #[description = "Where the pool is stored (channel or server, default channel)"] scope: Option<
+        Scope,
+    >,
 ) -> Result<(), Error> {
     info!("Received command: roll");
     let scopes_to_check = if let Some(scope) = scope {
@@ -106,10 +105,10 @@ pub async fn roll(
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn reset(
     ctx: Context<'_>,
-    #[description = "Name of the pool"]
-    pool_name: String,
-    #[description = "Where the pool is stored (channel or server, default channel)"]
-    scope: Option<Scope>,
+    #[description = "Name of the pool"] pool_name: String,
+    #[description = "Where the pool is stored (channel or server, default channel)"] scope: Option<
+        Scope,
+    >,
 ) -> Result<(), Error> {
     info!("Received command: reset");
     ctx.data()
@@ -125,10 +124,10 @@ pub async fn reset(
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn delete(
     ctx: Context<'_>,
-    #[description = "Name of the pool"]
-    pool_name: String,
-    #[description = "Where the pool is stored (channel or server, default channel)"]
-    scope: Option<Scope>,
+    #[description = "Name of the pool"] pool_name: String,
+    #[description = "Where the pool is stored (channel or server, default channel)"] scope: Option<
+        Scope,
+    >,
 ) -> Result<(), Error> {
     info!("Received command: delete");
     let deleted_pool = ctx
@@ -172,13 +171,12 @@ impl std::str::FromStr for SetValue {
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn set(
     ctx: Context<'_>,
-    #[description = "Name of the pool"]
-    pool_name: String,
+    #[description = "Name of the pool"] pool_name: String,
     // #[description = "Set to a value like \"6\", add like \"+1\", or subtract like \"-2\""]
-    #[description = "Value to set to"]
-    num_dice: SetValue,
-    #[description = "Where the pool is stored (channel or server, default channel)"]
-    scope: Option<Scope>,
+    #[description = "Value to set to"] num_dice: SetValue,
+    #[description = "Where the pool is stored (channel or server, default channel)"] scope: Option<
+        Scope,
+    >,
 ) -> Result<(), Error> {
     info!("Received command: set");
     let new_size = ctx

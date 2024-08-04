@@ -4,6 +4,5 @@ pub enum MoxieError {
     #[error("Pool not found!")]
     PoolNotFound,
     #[error("Database error: {0}")]
-    Database(#[from] sea_orm::DbErr)
-
+    Database(#[from] sea_orm::DbErr),
 }
