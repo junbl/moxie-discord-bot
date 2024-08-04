@@ -123,6 +123,29 @@ async fn delete(
     .await?;
     Ok(())
 }
+
+/// The type for the `num_dice` argument of the [`set`] command.
+#[derive(Debug, PartialEq)]
+pub enum SetValue {
+    Add(u8),
+    Subtract(u8),
+    Set(u8),
+}
+impl std::str::FromStr for SetValue {
+    type Err = std::num::ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (variant, value): (fn(_) -> _, _) = if let Some(add) = s.strip_prefix('+') {
+            (Self::Add, add)
+        } else if let Some(sub) = s.strip_prefix('-') {
+            (Self::Subtract, sub)
+        } else {
+            (Self::Set, s)
+        };
+        let value = value.parse::<u8>()?;
+        Ok(variant(value))
+    }
+}
 #[poise::command(prefix_command, slash_command)]
 async fn set(
     ctx: Context<'_>,
@@ -131,9 +154,15 @@ async fn set(
     scope: Option<Scope>,
     #[description = "Number of dice to set this pool to - can be a number like \"6\", or \
         you can add or subtract with an expression like \"+1\" or \"-2\""]
-    num_dice: String,
+    num_dice: SetValue,
 ) -> Result<(), Error> {
-    ctx.say("world!").await?;
+    let new_size = ctx
+        .data()
+        .pools
+        .set(scope_or_default(scope, &ctx), &pool_name, num_dice)
+        .await?;
+    ctx.say(format!("Set pool \"{pool_name}\" to {new_size} dice!"))
+        .await?;
     Ok(())
 }
 #[poise::command(prefix_command, slash_command)]
@@ -156,4 +185,30 @@ async fn check(
     ))
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SetValue;
+
+    #[test]
+    fn set_value() {
+        let good = [
+            ("1", SetValue::Set(1)),
+            ("+2", SetValue::Add(2)),
+            ("-3", SetValue::Subtract(3)),
+            ("+0", SetValue::Add(0)),
+            ("-004", SetValue::Subtract(4)),
+        ];
+        for (val, expected) in good {
+            assert_eq!(val.parse::<SetValue>().unwrap(), expected);
+        }
+        let bad = [
+            "+-1", "--12", "++1", "-+1", "-1+", "-1-", "256", "+256", "+1.0",
+        ];
+        for val in bad {
+            let res = val.parse::<SetValue>();
+            assert!(res.is_err(), "{res:?}");
+        }
+    }
 }

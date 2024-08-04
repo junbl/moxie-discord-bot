@@ -5,6 +5,9 @@ use rand::{thread_rng, Rng};
 use rand_distr::{Distribution, Uniform};
 use serde::{Deserialize, Serialize};
 
+/// The possible results of a roll in the Moxie system.
+///
+/// Wraps the actual roll value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Roll {
     Disaster(u8),

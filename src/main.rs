@@ -10,7 +10,7 @@ mod rolls;
 
 use commands::{hello, pool::pool, pooln};
 use pools_in_database::Pools;
-use rolls::{Pool, Rolls};
+use rolls::Rolls;
 
 /// User data, which is stored and accessible in all command invocations
 pub struct Data {

@@ -7,6 +7,7 @@ use sea_orm::DatabaseConnection;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
 use serenity::futures::TryFutureExt;
 
+use crate::commands::pool::SetValue;
 use crate::commands::Scope;
 use crate::error::MoxieError;
 use crate::rolls::{Pool, Roll, Rolls};
@@ -93,6 +94,7 @@ impl PoolInDb {
         }
     }
 }
+
 
 pub struct Pools {
     conn: DatabaseConnection,
@@ -190,6 +192,28 @@ impl Pools {
         server_res.and(channel_res).map(|_| ())
     }
 
+    pub async fn set(
+        &self,
+        scope: Scope,
+        pool_name: &str,
+        num_dice: SetValue,
+    ) -> Result<u8, Error> {
+        let pool = self.get(scope, pool_name).await?;
+        let new_size = match num_dice {
+            SetValue::Add(add) => pool.pool.dice() + add,
+            SetValue::Subtract(sub) => pool.pool.dice() - sub,
+            SetValue::Set(set) => set,
+        };
+        match_pool_id!(pool.id, |id| ActiveModel {
+            id: Unchanged(id),
+            current_size: Set(new_size as i16),
+            updated: Set(chrono::Utc::now()),
+            ..Default::default()
+        }
+        .update(&self.conn)
+        .map_ok(|_| ()))?;
+        Ok(new_size)
+    }
     pub async fn reset(&self, scope: Scope, pool_name: &str) -> Result<(), Error> {
         // should transaction but &self not 'static, but op is idempotent so nbd
         let pool = self.get(scope, pool_name).await?;
