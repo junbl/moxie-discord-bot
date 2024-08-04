@@ -27,6 +27,7 @@ fn scope_or_default(opt_scope: Option<Scope>, ctx: &Context) -> Scope {
 #[poise::command(
     prefix_command,
     slash_command,
+    aliases("p"),
     subcommands("new", "roll", "reset", "delete", "set", "check")
 )]
 pub async fn pool(_: Context<'_>) -> Result<(), Error> {
@@ -35,11 +36,13 @@ pub async fn pool(_: Context<'_>) -> Result<(), Error> {
 /// Creates a new pool.
 #[poise::command(prefix_command, slash_command)]
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
-async fn new(
+pub async fn new(
     ctx: Context<'_>,
-    #[description = "Number of dice to put in the pool"] num_dice: u8,
-    #[description = "Name of the pool"] name: String,
-    #[description = "Where to store this pool (either channel or server, defaults to channel)"]
+    // #[description = "Number of dice to put in the pool"]
+    num_dice: u8,
+    // #[description = "Name of the pool"]
+    name: String,
+    // #[description = "Where the pool is stored (channel or server, default channel)"]
     scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: new");
@@ -55,10 +58,11 @@ async fn new(
 /// Rolls a pool.
 #[poise::command(prefix_command, slash_command)]
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
-async fn roll(
+pub async fn roll(
     ctx: Context<'_>,
-    #[description = "Name of the pool"] pool_name: String,
-    #[description = "Where to look for this pool (either channel or server, defaults to channel)"]
+    // #[description = "Name of the pool"]
+    pool_name: String,
+    // #[description = "Where the pool is stored (channel or server, default channel)"]
     scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: roll");
@@ -100,10 +104,11 @@ async fn roll(
 /// Sets a pool's current dice back to its starting dice.
 #[poise::command(prefix_command, slash_command)]
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
-async fn reset(
+pub async fn reset(
     ctx: Context<'_>,
-    #[description = "Name of the pool"] pool_name: String,
-    #[description = "Where to look for this pool (either channel or server, defaults to channel)"]
+    // #[description = "Name of the pool"]
+    pool_name: String,
+    // #[description = "Where the pool is stored (channel or server, default channel)"]
     scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: reset");
@@ -118,10 +123,11 @@ async fn reset(
 /// Deletes a pool.
 #[poise::command(prefix_command, slash_command)]
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
-async fn delete(
+pub async fn delete(
     ctx: Context<'_>,
-    #[description = "Name of the pool"] pool_name: String,
-    #[description = "Where to look for this pool (either channel or server, defaults to channel)"]
+    // #[description = "Name of the pool"]
+    pool_name: String,
+    // #[description = "Where the pool is stored (channel or server, default channel)"]
     scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: delete");
@@ -164,13 +170,15 @@ impl std::str::FromStr for SetValue {
 /// Manually change the amount of dice in a pool.
 #[poise::command(prefix_command, slash_command)]
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
-async fn set(
+pub async fn set(
     ctx: Context<'_>,
-    #[description = "Name of the pool"] pool_name: String,
-    #[description = "Where to look for this pool (either channel or server, defaults to channel)"]
-    scope: Option<Scope>,
-    #[description = "Set to a value like \"6\", add like \"+1\", or subtract like \"-2\""]
+    // #[description = "Name of the pool"]
+    pool_name: String,
+    // #[description = "Set to a value like \"6\", add like \"+1\", or subtract like \"-2\""]
+    // #[description = "Value to set to"]
     num_dice: SetValue,
+    // #[description = "Where the pool is stored (channel or server, default channel)"]
+    scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: set");
     let new_size = ctx
@@ -185,11 +193,12 @@ async fn set(
 /// Checks the current number of dice in a pool without rolling it.
 #[poise::command(prefix_command, slash_command)]
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
-async fn check(
+pub async fn check(
     ctx: Context<'_>,
     #[description = "Name of the pool"] pool_name: String,
-    #[description = "Where to look for this pool (either channel or server, defaults to channel)"]
-    scope: Option<Scope>,
+    #[description = "Where the pool is stored (channel or server, default channel)"] scope: Option<
+        Scope,
+    >,
 ) -> Result<(), Error> {
     info!("Received command: check");
     let pool = ctx

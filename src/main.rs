@@ -9,6 +9,9 @@ mod pools_in_database;
 mod rolls;
 
 use commands::{hello, pool::pool, pooln};
+use commands::hi;
+
+// use commands::pool::{check, delete, new, reset, roll, set};
 use pools_in_database::Pools;
 use rolls::Rolls;
 
@@ -35,11 +38,7 @@ async fn main(
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![
-                hello(),
-                pool(),
-                pooln(),
-            ],
+            commands: vec![hello(), pool(), pooln(), hi()],
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {

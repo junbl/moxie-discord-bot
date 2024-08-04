@@ -76,3 +76,16 @@ pub async fn pooln(
         .await?;
     Ok(())
 }
+
+/// Testing subcommands
+#[poise::command(slash_command, prefix_command, subcommands("there"))]
+pub async fn hi(_: Context<'_>) -> Result<(), crate::Error> {
+    Ok(())
+}
+
+/// Say hi!
+#[poise::command(slash_command, prefix_command, subcommands("there"))]
+pub async fn there(ctx: Context<'_>) -> Result<(), crate::Error> {
+    ctx.say("Hi there!").await?;
+    Ok(())
+}
