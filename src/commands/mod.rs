@@ -10,7 +10,7 @@ use thiserror::Error;
 use crate::{rolls::Pool, Context};
 pub mod pool;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Scope {
     Server(GuildId),
     Channel(ChannelId),
@@ -55,13 +55,14 @@ impl ArgumentConvert for Scope {
     }
 }
 
+/// Health check
 #[poise::command(slash_command)]
 pub async fn hello(ctx: Context<'_>) -> Result<(), crate::Error> {
     ctx.say("<3").await?;
     Ok(())
 }
 
-/// Creates or rolls a pool.
+/// Rolls a one-off pool without storing it.
 #[poise::command(slash_command)]
 pub async fn pooln(
     ctx: Context<'_>,

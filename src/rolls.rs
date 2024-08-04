@@ -25,6 +25,19 @@ impl Roll {
     }
 }
 
+#[allow(dead_code)]
+pub fn roll_result(rolls: impl IntoIterator<Item = Roll>) -> Roll {
+    let mut current_max = Roll::Grim(1);
+    for roll in rolls {
+        if current_max.is_perfect() && roll.is_perfect() {
+            current_max = Roll::Critical;
+            break;
+        } else {
+            current_max = current_max.max(roll);
+        }
+    }
+    current_max
+}
 pub struct Rolls {
     dist: Uniform<u8>,
 }
@@ -45,22 +58,13 @@ impl Rolls {
             // })
             .take(num_dice)
     }
-    fn sample_pool<R: Rng + ?Sized>(&self, rng: &mut R, num_dice: usize) -> Roll {
-        if num_dice == 0 {
-            self.roll_n(rng, 2).min().expect("pool has two elements")
-        } else {
-            let mut current_max = Roll::Grim(1);
-            for roll in self.roll_n(rng, num_dice) {
-                if current_max.is_perfect() && roll.is_perfect() {
-                    current_max = Roll::Critical;
-                    break;
-                } else {
-                    current_max = current_max.max(roll);
-                }
-            }
-            current_max
-        }
-    }
+    // fn sample_pool<R: Rng + ?Sized>(&self, rng: &mut R, num_dice: usize) -> Roll {
+    //     if num_dice == 0 {
+    //         self.roll_n(rng, 2).min().expect("pool has two elements")
+    //     } else {
+    //         roll_result(self.roll_n(rng, num_dice))
+    //     }
+    // }
 }
 impl Distribution<Roll> for Rolls {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Roll {
@@ -99,14 +103,6 @@ impl Pool {
             .collect();
         rolls
     }
-    // pub fn roll_until_depleted<R: Rng + ?Sized>(&self, rng: &mut R) -> u8 {
-    //     self.dist
-    //         .sample_iter(rng)
-    //         .take(self.dice)
-    //         .max()
-    //         .unwrap_or_default() as u8
-    //         + 1
-    // }
 }
 impl std::fmt::Display for Roll {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
