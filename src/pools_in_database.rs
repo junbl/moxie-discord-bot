@@ -142,7 +142,7 @@ impl Pools {
         pool_name: String,
         pool_size: u8,
     ) -> Result<(), Error> {
-        if let Ok(_existing_pool) = self.get(scope, &pool_name).await {
+        if self.get(scope, &pool_name).await.is_ok() {
             Err(anyhow!("Pool \"{pool_name}\" already exists!").into())
         } else {
             let pool_size = pool_size as i16;

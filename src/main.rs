@@ -9,7 +9,6 @@ mod pools_in_database;
 mod rolls;
 
 use commands::{hello, pool::pool, pooln};
-use commands::hi;
 
 // use commands::pool::{check, delete, new, reset, roll, set};
 use pools_in_database::Pools;
@@ -23,6 +22,18 @@ pub struct Data {
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Context<'a> = poise::Context<'a, Data, Error>;
 
+/// Testing subcommands
+#[poise::command(slash_command, prefix_command, subcommands("there"))]
+pub async fn hi(_: Context<'_>) -> Result<(), crate::Error> {
+    Ok(())
+}
+
+/// Say hi!
+#[poise::command(slash_command, prefix_command)]
+pub async fn there(ctx: Context<'_>) -> Result<(), crate::Error> {
+    ctx.say("Hi there!").await?;
+    Ok(())
+}
 #[shuttle_runtime::main]
 async fn main(
     #[shuttle_runtime::Secrets] secret_store: SecretStore,
@@ -38,7 +49,12 @@ async fn main(
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![hello(), pool(), pooln(), hi()],
+            commands: vec![
+                hello(),
+                pool(),
+                pooln(),
+                hi(),
+            ],
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
