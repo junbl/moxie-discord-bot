@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 /// Wraps the actual roll value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Roll {
-    Disaster(u8),
+    // Disaster(u8),
     Grim(u8),
     Messy(u8),
     Perfect(u8),
@@ -22,6 +22,17 @@ impl Roll {
     }
     fn is_perfect(self) -> bool {
         matches!(self, Roll::Perfect(_))
+    }
+}
+impl std::fmt::Display for Roll {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            // Roll::Disaster(r) => r.fmt(f),
+            Roll::Grim(r) => r.fmt(f),
+            Roll::Messy(r) => r.fmt(f),
+            Roll::Perfect(r) => r.fmt(f),
+            Roll::Critical => 6.fmt(f),
+        }
     }
 }
 
@@ -51,11 +62,7 @@ impl Rolls {
         rng: &'a mut R,
         num_dice: usize,
     ) -> impl Iterator<Item = Roll> + 'a {
-        self.sample_iter(rng)
-            // .inspect(|r| {
-            //     dbg!(r);
-            // })
-            .take(num_dice)
+        self.sample_iter(rng).take(num_dice)
     }
     // fn sample_pool<R: Rng + ?Sized>(&self, rng: &mut R, num_dice: usize) -> Roll {
     //     if num_dice == 0 {
@@ -101,16 +108,5 @@ impl Pool {
             })
             .collect();
         rolls
-    }
-}
-impl std::fmt::Display for Roll {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Roll::Disaster(r) => r.fmt(f),
-            Roll::Grim(r) => r.fmt(f),
-            Roll::Messy(r) => r.fmt(f),
-            Roll::Perfect(r) => r.fmt(f),
-            Roll::Critical => 6.fmt(f),
-        }
     }
 }

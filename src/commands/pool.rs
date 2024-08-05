@@ -1,11 +1,14 @@
 //! The `pool` command, which offers operations to create, read, update, and delete diminishing
 //! pools.
+use std::future::ready;
+
 use itertools::Itertools;
+use serenity::futures::{future::Either, stream, Stream, StreamExt, TryStreamExt};
 use tracing::{info, instrument};
 
 use crate::{
     commands::{fmt_dice, Scope},
-    rolls::{Pool, Roll},
+    rolls::{roll_result, Pool, Roll},
     Context, Error,
 };
 
@@ -24,12 +27,17 @@ pub async fn subcommand(ctx: Context<'_>, arg: String) -> Result<(), crate::Erro
     Ok(())
 }
 
-pub fn print_pool_results(rolls: &[Roll], pool: Pool) -> String {
-    format!(
+pub fn print_pool_results(rolls: &[Roll], pool: Pool, print_outcome: bool) -> String {
+    let mut msg = format!(
         "rolls: {}\nremaining dice: {}",
         rolls.iter().map(ToString::to_string).join(" "),
-        pool.dice()
-    )
+        pool.dice(),
+    );
+    if print_outcome {
+        use std::fmt::Write;
+        write!(msg, "\n{}", roll_result(rolls.iter().copied())).unwrap();
+    }
+    msg
 }
 
 /// If the scope argument is not provided, use this to default to
@@ -38,12 +46,30 @@ fn scope_or_default(opt_scope: Option<Scope>, ctx: &Context) -> Scope {
     opt_scope.unwrap_or_else(|| Scope::Channel(ctx.channel_id()))
 }
 
+async fn autocomplete_pool_name<'a>(
+    ctx: Context<'a>,
+    partial: &'a str,
+) -> impl Stream<Item = String> + 'a {
+    ctx.data()
+        .pools
+        .list(Scope::Channel(ctx.channel_id()), partial, Some(32), None)
+        .await
+        .map_or_else(
+            |e| {
+                tracing::error!("Error in autocomplete stream: {e}");
+                Either::Left(stream::empty())
+            },
+            Either::Right,
+        )
+        .filter_map(|pool_res| ready(pool_res.ok().map(|p| p.name)))
+}
+
 /// Entrypoint for interacting with pools.
 #[poise::command(
     slash_command,
     prefix_command,
     aliases("p"),
-    subcommands("new", "roll", "reset", "delete", "set", "check")
+    subcommands("new", "roll", "reset", "delete", "set", "check", "list")
 )]
 pub async fn pool(_: Context<'_>) -> Result<(), Error> {
     Ok(())
@@ -72,7 +98,9 @@ pub async fn new(
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn roll(
     ctx: Context<'_>,
-    #[description = "Name of the pool"] pool_name: String,
+    #[autocomplete = "autocomplete_pool_name"]
+    #[description = "Name of the pool"]
+    pool_name: String,
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: roll");
@@ -103,7 +131,7 @@ pub async fn roll(
         ctx.say(format!(
             "Rolled pool \"{pool_name}\" with {}\n{}",
             fmt_dice(rolls.len() as u8),
-            print_pool_results(&rolls, pool.pool)
+            print_pool_results(&rolls, pool.pool, false)
         ))
         .await?;
         Ok(())
@@ -155,6 +183,49 @@ pub async fn delete(
     Ok(())
 }
 
+/// See the available pools for this channel or server.
+#[poise::command(prefix_command, slash_command)]
+#[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
+pub async fn list(
+    ctx: Context<'_>,
+    #[description = "Name of the pool"] pool_search_string: Option<String>,
+    #[description = "Page of results"] page: Option<u64>,
+    #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
+) -> Result<(), Error> {
+    info!("Received command: list");
+    let page_size = 12;
+    let pools = ctx
+        .data()
+        .pools
+        .list(
+            scope_or_default(scope, &ctx),
+            &pool_search_string.unwrap_or_default(),
+            Some(page_size),
+            page.map(|p| p * page_size),
+        )
+        .await?
+        .try_collect::<Vec<_>>()
+        .await?;
+    let max_name_length = pools
+        .iter()
+        .map(|p| p.name().len())
+        .max()
+        .unwrap_or_default();
+    let width = (max_name_length + 3).max(8);
+    let table = pools
+        .into_iter()
+        .map(|pool| {
+            format!(
+                "{:width$}{}/{}",
+                pool.name(),
+                pool.pool.dice(),
+                fmt_dice(pool.original_size())
+            )
+        })
+        .join("\n");
+    ctx.say(format!("```\n{table}\n```")).await?;
+    Ok(())
+}
 /// Manually change the amount of dice in a pool.
 ///
 /// To set to `n` dice, use `set {pool} n`.
@@ -165,8 +236,7 @@ pub async fn delete(
 pub async fn set(
     ctx: Context<'_>,
     #[description = "Name of the pool"] pool_name: String,
-    #[description = "Add like \"+1\", subtract like \"-2\", or set like \"6\""]
-    num_dice: SetValue,
+    #[description = "Add like \"+1\", subtract like \"-2\", or set like \"6\""] num_dice: SetValue,
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: set");

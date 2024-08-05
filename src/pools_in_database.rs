@@ -3,9 +3,9 @@
 use anyhow::anyhow;
 use entity::{channel_pool, server_pool};
 use sea_orm::ActiveValue::{Set, Unchanged};
-use sea_orm::DatabaseConnection;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
-use serenity::futures::TryFutureExt;
+use sea_orm::{DatabaseConnection, QuerySelect};
+use serenity::futures::{Stream, TryFutureExt, TryStreamExt};
 
 use crate::commands::pool::SetValue;
 use crate::commands::Scope;
@@ -31,16 +31,24 @@ macro_rules! match_scope {
     ($scope:expr, $body_fn:expr) => {
         match $scope {
             Scope::Server(id) => {
-                use entity::server_pool::Column::ServerId as Id;
-                use entity::server_pool::*;
-                use PoolId::Server as PoolIdVariant;
-                ($body_fn)(id.get()).await
+                #[allow(unused_imports)]
+                {
+                    use entity::server_pool::Column::ServerId as Id;
+                    use entity::server_pool::*;
+                    use serenity::futures::future::Either::Left as Either;
+                    use PoolId::Server as PoolIdVariant;
+                    ($body_fn)(id.get()).await
+                }
             }
             Scope::Channel(id) => {
-                use entity::channel_pool::Column::ChannelId as Id;
-                use entity::channel_pool::*;
-                use PoolId::Channel as PoolIdVariant;
-                ($body_fn)(id.get()).await
+                #[allow(unused_imports)]
+                {
+                    use entity::channel_pool::Column::ChannelId as Id;
+                    use entity::channel_pool::*;
+                    use serenity::futures::future::Either::Right as Either;
+                    use PoolId::Channel as PoolIdVariant;
+                    ($body_fn)(id.get()).await
+                }
             }
         }
     };
@@ -52,16 +60,21 @@ pub enum PoolId {
 
 pub struct PoolInDb {
     pub pool: Pool,
+    pub name: String,
     id: PoolId,
     original_size: u8,
 }
 impl PoolInDb {
-    pub fn new(dice: u8, id: PoolId, original_size: u8) -> Self {
+    pub fn new(dice: u8, name: String, id: PoolId, original_size: u8) -> Self {
         Self {
             pool: Pool::new(dice),
+            name,
             id,
             original_size,
         }
+    }
+    pub fn name(&self) -> &str {
+        self.name.as_str()
     }
     pub fn original_size(&self) -> u8 {
         self.original_size
@@ -92,6 +105,27 @@ impl PoolInDb {
         } else {
             Err(anyhow!("Didn't delete exactly one row: {}", delete.rows_affected).into())
         }
+    }
+}
+
+impl From<server_pool::Model> for PoolInDb {
+    fn from(pool: server_pool::Model) -> Self {
+        PoolInDb::new(
+            pool.current_size as u8,
+            pool.name,
+            PoolId::Server(pool.id),
+            pool.original_size as u8,
+        )
+    }
+}
+impl From<channel_pool::Model> for PoolInDb {
+    fn from(pool: channel_pool::Model) -> Self {
+        PoolInDb::new(
+            pool.current_size as u8,
+            pool.name,
+            PoolId::Channel(pool.id),
+            pool.original_size as u8,
+        )
     }
 }
 
@@ -128,11 +162,7 @@ impl Pools {
                 .one(conn)
                 .await?
                 .ok_or(MoxieError::PoolNotFound)?;
-            Ok(PoolInDb::new(
-                pool.current_size as u8,
-                PoolIdVariant(pool.id),
-                pool.original_size as u8,
-            ))
+            Ok(PoolInDb::from(pool))
         })
     }
     pub async fn create(
@@ -225,5 +255,25 @@ impl Pools {
         .update(&self.conn)
         .map_ok(|_| pool.original_size))?;
         Ok(original_size)
+    }
+    pub async fn list<'a>(
+        &'a self,
+        scope: Scope,
+        pool_search_string: &str,
+        limit: Option<u64>,
+        offset: Option<u64>,
+    ) -> Result<impl Stream<Item = Result<PoolInDb, sea_orm::DbErr>> + 'a, Error> {
+        let search_string = format!("%{pool_search_string}%");
+        match_scope!(scope, |id| async move {
+            let pools = Entity::find()
+                .filter(Id.eq(id))
+                .filter(Column::Name.like(search_string))
+                .limit(limit)
+                .offset(offset)
+                .stream(&self.conn)
+                .await?
+                .map_ok(PoolInDb::from);
+            Ok(Either(pools))
+        })
     }
 }
