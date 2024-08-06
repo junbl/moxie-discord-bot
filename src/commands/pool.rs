@@ -42,10 +42,12 @@ fn get_die_emoji(roll: Roll) -> &'static str {
 }
 
 pub fn print_pool_results(rolls: &[Roll], pool: Pool, print_outcome: bool) -> String {
+    let remaining = pool.dice();
     let mut msg = format!(
-        "# rolls: {}\nremaining dice: {}",
+        "# {}\n## dropped: *{}* remaining: *{}*",
         rolls.iter().copied().map(get_die_emoji).join(" "),
-        pool.dice(),
+        rolls.len() as u8 - remaining,
+        remaining,
     );
     if print_outcome {
         use std::fmt::Write;
