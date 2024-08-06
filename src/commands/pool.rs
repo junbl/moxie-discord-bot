@@ -27,15 +27,31 @@ pub async fn subcommand(ctx: Context<'_>, arg: String) -> Result<(), crate::Erro
     Ok(())
 }
 
+fn get_die_emoji(roll: Roll) -> &'static str {
+    [
+        (6, "<:d66:1269902496600428554>"),
+        (5, "<:d65:1269902489000345620>"),
+        (4, "<:d64:1269902479907229767>"),
+        (3, "<:d63:1269902465915158623>"),
+        (2, "<:d62:1269902452988186735>"),
+        (1, "<:d61:1269902426530512978>"),
+    ]
+    .into_iter()
+    .find_map(|(roll_number, emoji)| (roll.as_number() == roll_number).then_some(emoji))
+    .expect("Rolls should only be in the 1-6 range")
+}
+
 pub fn print_pool_results(rolls: &[Roll], pool: Pool, print_outcome: bool) -> String {
+    let remaining = pool.dice();
     let mut msg = format!(
-        "rolls: {}\nremaining dice: {}",
-        rolls.iter().map(ToString::to_string).join(" "),
-        pool.dice(),
+        "# {}\n### dropped: `{}` remaining: `{}`",
+        rolls.iter().copied().map(get_die_emoji).join(" "),
+        rolls.len() as u8 - remaining,
+        remaining,
     );
     if print_outcome {
         use std::fmt::Write;
-        write!(msg, "\n{}", roll_result(rolls.iter().copied())).unwrap();
+        write!(msg, "\n{}", roll_result(rolls.iter().copied()).as_number()).unwrap();
     }
     msg
 }
