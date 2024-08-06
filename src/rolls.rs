@@ -17,24 +17,32 @@ pub enum Roll {
     Critical,
 }
 impl Roll {
-    fn is_grim(self) -> bool {
+    pub fn is_grim(self) -> bool {
         matches!(self, Roll::Grim(_))
     }
-    fn is_perfect(self) -> bool {
+    pub fn is_perfect(self) -> bool {
         matches!(self, Roll::Perfect(_))
     }
-}
-impl std::fmt::Display for Roll {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    pub fn as_number(self) -> u8 {
         match self {
             // Roll::Disaster(r) => r.fmt(f),
-            Roll::Grim(r) => r.fmt(f),
-            Roll::Messy(r) => r.fmt(f),
-            Roll::Perfect(r) => r.fmt(f),
-            Roll::Critical => 6.fmt(f),
+            Roll::Grim(r) | Roll::Messy(r) | Roll::Perfect(r) => r,
+            Roll::Critical => 6,
         }
+
     }
 }
+// impl std::fmt::Display for Roll {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         match self {
+//             // Roll::Disaster(r) => r.fmt(f),
+//             Roll::Grim(r) => r.fmt(f),
+//             Roll::Messy(r) => r.fmt(f),
+//             Roll::Perfect(r) => r.fmt(f),
+//             Roll::Critical => 6.fmt(f),
+//         }
+//     }
+// }
 
 pub fn roll_result(rolls: impl IntoIterator<Item = Roll>) -> Roll {
     let mut current_max = Roll::Grim(1);
