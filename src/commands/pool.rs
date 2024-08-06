@@ -144,7 +144,9 @@ pub async fn roll(
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn reset(
     ctx: Context<'_>,
-    #[description = "Name of the pool"] pool_name: String,
+    #[autocomplete = "autocomplete_pool_name"]
+    #[description = "Name of the pool"]
+    pool_name: String,
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: reset");
@@ -165,7 +167,9 @@ pub async fn reset(
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn delete(
     ctx: Context<'_>,
-    #[description = "Name of the pool"] pool_name: String,
+    #[autocomplete = "autocomplete_pool_name"]
+    #[description = "Name of the pool"]
+    pool_name: String,
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: delete");
@@ -235,7 +239,9 @@ pub async fn list(
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn set(
     ctx: Context<'_>,
-    #[description = "Name of the pool"] pool_name: String,
+    #[autocomplete = "autocomplete_pool_name"]
+    #[description = "Name of the pool"]
+    pool_name: String,
     #[description = "Add like \"+1\", subtract like \"-2\", or set like \"6\""] num_dice: SetValue,
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
@@ -257,7 +263,9 @@ pub async fn set(
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn check(
     ctx: Context<'_>,
-    #[description = "Name of the pool"] pool_name: String,
+    #[autocomplete = "autocomplete_pool_name"]
+    #[description = "Name of the pool"]
+    pool_name: String,
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: check");

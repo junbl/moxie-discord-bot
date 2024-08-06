@@ -7,7 +7,7 @@ use serenity::{
 };
 use thiserror::Error;
 
-use crate::{rolls::Pool, Context};
+use crate::{rolls::Pool, Context, Error};
 pub mod pool;
 
 #[derive(Debug, Clone, Copy)]
@@ -68,7 +68,7 @@ pub fn fmt_dice(num_dice: u8) -> String {
 
 /// Health check
 #[poise::command(slash_command)]
-pub async fn hello(ctx: Context<'_>) -> Result<(), crate::Error> {
+pub async fn hello(ctx: Context<'_>) -> Result<(), Error> {
     tracing::info!("Received command: hello");
     ctx.say("<3").await?;
     Ok(())
@@ -79,7 +79,7 @@ pub async fn hello(ctx: Context<'_>) -> Result<(), crate::Error> {
 pub async fn quickpool(
     ctx: Context<'_>,
     #[description = "Number of dice in the pool"] num_dice: u8,
-) -> Result<(), crate::Error> {
+) -> Result<(), Error> {
     let mut pool = Pool::new(num_dice);
     let rolls = pool.roll(&ctx.data().rolls);
 
@@ -87,5 +87,21 @@ pub async fn quickpool(
         &rolls, pool, false,
     ))
     .await?;
+    Ok(())
+}
+
+/// See command help.
+#[poise::command(slash_command)]
+pub async fn help(
+    ctx: Context<'_>,
+    #[description = "Specific command to show help about"] command: Option<String>,
+) -> Result<(), Error> {
+    let config = poise::builtins::HelpConfiguration {
+        extra_text_at_bottom: "\
+            Type /help command for more info on a command.
+            You can edit your message to the bot and the bot will edit its response.",
+        ..Default::default()
+    };
+    poise::builtins::help(ctx, command.as_deref(), config).await?;
     Ok(())
 }
