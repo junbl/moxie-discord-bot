@@ -10,7 +10,7 @@ use serenity::futures::{Stream, TryFutureExt, TryStreamExt};
 use crate::commands::pool::SetValue;
 use crate::commands::Scope;
 use crate::error::MoxieError;
-use crate::rolls::{Pool, Roll, Rolls};
+use crate::rolls::{Pool, Roll, RollDistribution};
 use crate::Error;
 
 macro_rules! match_pool_id {
@@ -82,7 +82,7 @@ impl PoolInDb {
     pub async fn roll(
         &mut self,
         conn: &DatabaseConnection,
-        rolls: &Rolls,
+        rolls: &RollDistribution,
     ) -> Result<Vec<Roll>, anyhow::Error> {
         let rolls = self.pool.roll(rolls);
         match_pool_id!(self.id, |id| async move {
@@ -141,7 +141,7 @@ impl Pools {
         &self,
         scope: Scope,
         pool_name: &str,
-        rolls: &Rolls,
+        rolls: &RollDistribution,
     ) -> Result<Option<(PoolInDb, Vec<Roll>)>, anyhow::Error> {
         let mut pool = match self.get(scope, pool_name).await {
             Ok(p) => Ok(p),
@@ -158,7 +158,7 @@ impl Pools {
         match_scope!(scope, |id| async move {
             let pool = Entity::find()
                 .filter(Id.eq(id))
-                .filter(Column::Name.eq(pool_name))
+                .filter(Column::Name.like(pool_name))
                 .one(conn)
                 .await?
                 .ok_or(MoxieError::PoolNotFound)?;
@@ -172,7 +172,7 @@ impl Pools {
         pool_size: u8,
     ) -> Result<(), Error> {
         if self.get(scope, &pool_name).await.is_ok() {
-            Err(anyhow!("Pool \"{pool_name}\" already exists!").into())
+            Err(anyhow!("Pool `{pool_name}` already exists!").into())
         } else {
             let pool_size = pool_size as i16;
             match scope {

@@ -8,16 +8,17 @@ mod error;
 mod pools_in_database;
 mod rolls;
 
-use commands::{help, pool::pool, quickpool};
+use commands::{help, pool::pool, quickpool, roll::roll};
 
 // use commands::pool::{check, delete, new, reset, roll, set};
 use pools_in_database::Pools;
-use rolls::Rolls;
+use rolls::{RollDistribution, ThornDistribution};
 
 /// User data, which is stored and accessible in all command invocations
 pub struct Data {
     pools: Pools,
-    rolls: Rolls,
+    roll_dist: RollDistribution,
+    thorn_dist: ThornDistribution,
 }
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Context<'a> = poise::Context<'a, Data, Error>;
@@ -37,15 +38,16 @@ async fn main(
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![pool(), quickpool(), help()],
+            commands: vec![pool(), quickpool(), help(), roll()],
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                 Ok(Data {
-                    rolls: Rolls::new(),
                     pools: Pools::new(conn),
+                    roll_dist: RollDistribution::new(),
+                    thorn_dist: ThornDistribution::new(),
                 })
             })
         })

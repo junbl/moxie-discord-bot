@@ -1757,12 +1757,13 @@ dependencies = [
 
 [[package]]
 name = "moxie-discord-bot"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",
  "entity",
  "itertools 0.13.0",
+ "nom",
  "poise",
  "rand",
  "rand_distr",
