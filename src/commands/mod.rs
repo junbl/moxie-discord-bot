@@ -9,6 +9,7 @@ use thiserror::Error;
 
 use crate::{rolls::Pool, Context, Error};
 pub mod pool;
+pub mod roll;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Scope {
@@ -81,12 +82,10 @@ pub async fn quickpool(
     #[description = "Number of dice in the pool"] num_dice: u8,
 ) -> Result<(), Error> {
     let mut pool = Pool::new(num_dice);
-    let rolls = pool.roll(&ctx.data().rolls);
+    let rolls = pool.roll(&ctx.data().roll_dist);
 
-    ctx.say(crate::commands::pool::print_pool_results(
-        &rolls, pool, false,
-    ))
-    .await?;
+    ctx.say(crate::commands::pool::print_pool_results(&rolls, pool))
+        .await?;
     Ok(())
 }
 

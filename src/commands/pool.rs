@@ -1,6 +1,6 @@
 //! The `pool` command, which offers operations to create, read, update, and delete diminishing
 //! pools.
-use std::future::ready;
+use std::{borrow::Cow, future::ready};
 
 use itertools::Itertools;
 use serenity::futures::{future::Either, stream, Stream, StreamExt, TryStreamExt};
@@ -8,7 +8,7 @@ use tracing::{info, instrument};
 
 use crate::{
     commands::{fmt_dice, Scope},
-    rolls::{roll_result, Pool, Roll},
+    rolls::{Pool, Roll, Thorn},
     Context, Error,
 };
 
@@ -38,21 +38,62 @@ fn get_die_emoji(roll: Roll) -> &'static str {
     ]
     .into_iter()
     .find_map(|(roll_number, emoji)| (roll.as_number() == roll_number).then_some(emoji))
-    .expect("Rolls should only be in the 1-6 range")
+    .expect("Rolls must only be in the 1-6 range")
 }
 
-pub fn print_pool_results(rolls: &[Roll], pool: Pool, print_outcome: bool) -> String {
+fn get_thorn_emoji(thorn: Thorn) -> &'static str {
+    [
+        (8, "<:d88:1270578052102881381>"),
+        (7, "<:d87:1270578033836822589>"),
+        (6, "<:d81:1270578008956076112>"),
+        (5, "<:d81:1270578008956076112>"),
+        (4, "<:d81:1270578008956076112>"),
+        (3, "<:d81:1270578008956076112>"),
+        (2, "<:d81:1270578008956076112>"),
+        (1, "<:d81:1270578008956076112>"),
+    ]
+    .into_iter()
+    .find_map(|(roll_number, emoji)| (thorn.as_number() == roll_number).then_some(emoji))
+    .expect("Thorns must only be in the 1-8 range")
+}
+
+pub fn rolls_str(rolls: &[Roll], style_die: bool) -> String {
+    let mut emoji_iter = rolls.iter().copied().map(get_die_emoji);
+    if style_die {
+        emoji_iter
+            .enumerate()
+            .map(|(i, emoji)| {
+                if i == 0 {
+                    Cow::Owned(format!(":sparkles:{emoji}:sparkles: "))
+                } else {
+                    Cow::Borrowed(emoji)
+                }
+            })
+            .join(" ")
+    } else {
+        emoji_iter.join(" ")
+    }
+}
+pub fn thorns_str(thorns: &[Thorn]) -> String {
+    thorns.iter().copied().map(get_thorn_emoji).join(" ")
+}
+
+pub fn print_pool_results(rolls: &[Roll], pool: Pool) -> String {
     let remaining = pool.dice();
     let mut msg = format!(
         "# {}\n### dropped: `{}` remaining: `{}`",
-        rolls.iter().copied().map(get_die_emoji).join(" "),
+        rolls_str(rolls, false),
         rolls.len() as u8 - remaining,
         remaining,
     );
-    if print_outcome {
+    if remaining == 0 {
         use std::fmt::Write;
-        write!(msg, "\n{}", roll_result(rolls.iter().copied()).as_number()).unwrap();
+        write!(msg, "\n### Pool depleted!").unwrap();
     }
+    // if print_outcome {
+    //     use std::fmt::Write;
+    //     write!(msg, "\n{}", roll_result(rolls.iter().copied()).as_number()).unwrap();
+    // }
     msg
 }
 
@@ -100,7 +141,7 @@ pub async fn new(
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: new");
-    let message = format!("Created new pool \"{name}\" with {}!", fmt_dice(num_dice));
+    let message = format!("Created new pool `{name}` with {}!", fmt_dice(num_dice));
     ctx.data()
         .pools
         .create(scope_or_default(scope, &ctx), name, num_dice)
@@ -134,7 +175,7 @@ pub async fn roll(
         if let Some(p) = ctx
             .data()
             .pools
-            .roll(scope, pool_name, &ctx.data().rolls)
+            .roll(scope, pool_name, &ctx.data().roll_dist)
             .await
             .ok()
             .flatten()
@@ -145,9 +186,9 @@ pub async fn roll(
     }
     if let Some((pool, rolls)) = rolls {
         ctx.say(format!(
-            "Rolled pool \"{pool_name}\" with {}\n{}",
+            "Rolled pool `{pool_name}` with {}\n{}",
             fmt_dice(rolls.len() as u8),
-            print_pool_results(&rolls, pool.pool, false)
+            print_pool_results(&rolls, pool.pool)
         ))
         .await?;
         Ok(())
@@ -172,7 +213,7 @@ pub async fn reset(
         .reset(scope_or_default(scope, &ctx), &pool_name)
         .await?;
     ctx.say(format!(
-        "Reset pool \"{pool_name}\" back to {}!",
+        "Reset pool `{pool_name}` back to {}!",
         fmt_dice(num_dice)
     ))
     .await?;
@@ -196,7 +237,7 @@ pub async fn delete(
         .await?;
 
     ctx.say(format!(
-        "Deleted pool \"{pool_name}\" (had {} left)",
+        "Deleted pool `{pool_name}` (had {} left)",
         fmt_dice(deleted_pool.dice()),
     ))
     .await?;
@@ -258,7 +299,7 @@ pub async fn set(
     #[autocomplete = "autocomplete_pool_name"]
     #[description = "Name of the pool"]
     pool_name: String,
-    #[description = "Add like \"+1\", subtract like \"-2\", or set like \"6\""] num_dice: SetValue,
+    #[description = "Add like `+1`, subtract like `-2`, or set like `6`"] num_dice: SetValue,
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: set");
@@ -268,7 +309,7 @@ pub async fn set(
         .set(scope_or_default(scope, &ctx), &pool_name, num_dice)
         .await?;
     ctx.say(format!(
-        "Pool \"{pool_name}\" now has {}!",
+        "Pool `{pool_name}` now has {}!",
         fmt_dice(new_size),
     ))
     .await?;
@@ -291,7 +332,7 @@ pub async fn check(
         .get(scope_or_default(scope, &ctx), &pool_name)
         .await?;
     ctx.say(format!(
-        "Pool \"{}\" currently has {}/{} remaining!",
+        "Pool `{}` currently has {}/{} remaining!",
         pool_name,
         pool.pool.dice(),
         fmt_dice(pool.original_size()),
