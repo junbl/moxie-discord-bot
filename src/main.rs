@@ -8,7 +8,7 @@ mod error;
 mod pools_in_database;
 mod rolls;
 
-use commands::{help, pool::pool, quickpool, roll::roll};
+use commands::{help, pool::pool, scenebreak, quickpool, roll::roll};
 
 // use commands::pool::{check, delete, new, reset, roll, set};
 use pools_in_database::Pools;
@@ -38,7 +38,7 @@ async fn main(
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![pool(), quickpool(), help(), roll()],
+            commands: vec![pool(), quickpool(), help(), roll(), scenebreak()],
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {

@@ -89,6 +89,14 @@ pub async fn quickpool(
     Ok(())
 }
 
+/// Print out an empty line to signify a break in the scene.
+#[poise::command(slash_command, prefix_command)]
+pub async fn scenebreak(ctx: Context<'_>) -> Result<(), crate::Error> {
+    ctx.say("```\n \n```").await?;
+    Ok(())
+}
+
+
 /// See command help.
 #[poise::command(slash_command)]
 pub async fn help(
