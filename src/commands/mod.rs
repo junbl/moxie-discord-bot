@@ -96,7 +96,6 @@ pub async fn scenebreak(ctx: Context<'_>) -> Result<(), crate::Error> {
     Ok(())
 }
 
-
 /// See command help.
 #[poise::command(slash_command)]
 pub async fn help(

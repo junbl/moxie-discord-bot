@@ -8,7 +8,7 @@ mod error;
 mod pools_in_database;
 mod rolls;
 
-use commands::{help, pool::pool, scenebreak, quickpool, roll::roll};
+use commands::{help, pool::pool, quickpool, roll::roll, scenebreak};
 
 // use commands::pool::{check, delete, new, reset, roll, set};
 use pools_in_database::Pools;

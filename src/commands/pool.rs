@@ -136,6 +136,7 @@ async fn autocomplete_pool_name<'a>(
     slash_command,
     prefix_command,
     aliases("p"),
+    subcommand_required,
     subcommands("new", "roll", "reset", "delete", "set", "check", "list")
 )]
 pub async fn pool(_: Context<'_>) -> Result<(), Error> {
@@ -203,7 +204,7 @@ pub async fn roll(
         .await?;
         Ok(())
     } else {
-        Err(anyhow::anyhow!("Pool {pool_name} not found!").into())
+        Err(anyhow::anyhow!("Pool `{pool_name}` not found!").into())
     }
 }
 /// Sets a pool's current dice back to the number of dice it started with.
@@ -335,6 +336,14 @@ pub async fn check(
     pool_name: String,
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
+    check_inner(ctx, pool_name, scope).await
+}
+
+async fn check_inner(
+    ctx: Context<'_>,
+    pool_name: String,
+    scope: Option<Scope>,
+) -> Result<(), Error> {
     info!("Received command: check");
     let pool = ctx
         .data()
@@ -350,7 +359,6 @@ pub async fn check(
     .await?;
     Ok(())
 }
-
 /// The type for the `num_dice` argument of the [`set`] command.
 #[derive(Debug, PartialEq)]
 pub enum SetValue {
