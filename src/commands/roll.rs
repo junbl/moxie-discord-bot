@@ -95,19 +95,20 @@ mod parse {
 #[poise::command(slash_command, prefix_command)]
 pub async fn roll(
     ctx: Context<'_>,
-    #[description = "A roll expression, like `2d` or `3d1t`"] roll: RollExpr,
-    #[description = "One of your dice will crit on a 6"] style_die: Option<bool>,
-    #[description = "Treats rolls of 5 as a 6"] fives_count_as_sixes: Option<bool>,
+    #[description = "A roll expression, like `2d` or `3d1t`"] dice: RollExpr,
+    #[description = "One of your dice will crit on a 6"] mastery_die: Option<bool>,
+    #[description = "Treats rolls of 5 as 6"] fives_count_as_sixes: Option<bool>,
 ) -> Result<(), Error> {
-    let (rolls, thorns) = roll.roll(&ctx.data().roll_dist, &ctx.data().thorn_dist);
-    let style_die = style_die.unwrap_or_default();
-    let roll_str = rolls_str(&rolls, style_die);
+    let (rolls, thorns) = dice.roll(&ctx.data().roll_dist, &ctx.data().thorn_dist);
+    let mastery_die = mastery_die.unwrap_or_default();
+    let fives_count_as_sixes = fives_count_as_sixes.unwrap_or_default();
+    let roll_str = rolls_str(&rolls, mastery_die, fives_count_as_sixes);
     let mut message = format!("# {roll_str}");
     if !thorns.is_empty() {
         write!(message, " • {}", thorns_str(&thorns)).unwrap()
     }
 
-    let roll = roll_result(rolls, style_die, fives_count_as_sixes.unwrap_or_default());
+    let roll = roll_result(rolls, mastery_die, fives_count_as_sixes);
     let final_roll = thorns.into_iter().fold(roll, Roll::cut);
     if roll != final_roll {
         write!(message, "\n### `{roll}`, cut to...").unwrap();

@@ -27,10 +27,17 @@ pub async fn subcommand(ctx: Context<'_>, arg: String) -> Result<(), crate::Erro
     Ok(())
 }
 
-fn get_die_emoji(roll: Roll) -> &'static str {
+fn get_die_emoji(roll: Roll, fives_count_as_sixes: bool) -> &'static str {
     [
         (6, "<:d66:1270889063628537910>"),
-        (5, "<:d65:1270889051871776809>"),
+        (
+            5,
+            if fives_count_as_sixes {
+                "<:d65_perfect:1270928629286567976>"
+            } else {
+                "<:d65:1270889051871776809>"
+            },
+        ),
         (4, "<:d64:1270889188190978199>"),
         (3, "<:d63:1270889037514670142>"),
         (2, "<:d62:1270889005373984899>"),
@@ -57,8 +64,11 @@ fn get_thorn_emoji(thorn: Thorn) -> &'static str {
     .expect("Thorns must only be in the 1-8 range")
 }
 
-pub fn rolls_str(rolls: &[Roll], style_die: bool) -> String {
-    let mut emoji_iter = rolls.iter().copied().map(get_die_emoji);
+pub fn rolls_str(rolls: &[Roll], style_die: bool, fives_count_as_sixes: bool) -> String {
+    let mut emoji_iter = rolls
+        .iter()
+        .copied()
+        .map(|roll| get_die_emoji(roll, fives_count_as_sixes));
     if style_die {
         emoji_iter
             .enumerate()
@@ -82,7 +92,7 @@ pub fn print_pool_results(rolls: &[Roll], pool: Pool) -> String {
     let remaining = pool.dice();
     let mut msg = format!(
         "# {}\n### dropped: `{}` remaining: `{}`",
-        rolls_str(rolls, false),
+        rolls_str(rolls, false, false),
         rolls.len() as u8 - remaining,
         remaining,
     );
@@ -126,6 +136,7 @@ async fn autocomplete_pool_name<'a>(
     slash_command,
     prefix_command,
     aliases("p"),
+    subcommand_required,
     subcommands("new", "roll", "reset", "delete", "set", "check", "list")
 )]
 pub async fn pool(_: Context<'_>) -> Result<(), Error> {
@@ -193,7 +204,7 @@ pub async fn roll(
         .await?;
         Ok(())
     } else {
-        Err(anyhow::anyhow!("Pool {pool_name} not found!").into())
+        Err(anyhow::anyhow!("Pool `{pool_name}` not found!").into())
     }
 }
 /// Sets a pool's current dice back to the number of dice it started with.
@@ -325,6 +336,14 @@ pub async fn check(
     pool_name: String,
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
+    check_inner(ctx, pool_name, scope).await
+}
+
+async fn check_inner(
+    ctx: Context<'_>,
+    pool_name: String,
+    scope: Option<Scope>,
+) -> Result<(), Error> {
     info!("Received command: check");
     let pool = ctx
         .data()
@@ -340,7 +359,6 @@ pub async fn check(
     .await?;
     Ok(())
 }
-
 /// The type for the `num_dice` argument of the [`set`] command.
 #[derive(Debug, PartialEq)]
 pub enum SetValue {

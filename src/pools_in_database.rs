@@ -263,11 +263,10 @@ impl Pools {
         limit: Option<u64>,
         offset: Option<u64>,
     ) -> Result<impl Stream<Item = Result<PoolInDb, sea_orm::DbErr>> + 'a, Error> {
-        let search_string = format!("%{pool_search_string}%");
         match_scope!(scope, |id| async move {
             let pools = Entity::find()
                 .filter(Id.eq(id))
-                .filter(Column::Name.like(search_string))
+                .filter(Column::Name.contains(pool_search_string))
                 .limit(limit)
                 .offset(offset)
                 .stream(&self.conn)
