@@ -56,15 +56,14 @@ impl ArgumentConvert for Scope {
     }
 }
 
-/// Displays the number of dice with proper pluralization.
+/// Displays the number of dice.
 /// ```
-/// assert_eq!(fmt_dice(0), "0 dice");
-/// assert_eq!(fmt_dice(1), "1 die");
-/// assert_eq!(fmt_dice(2), "2 dice");
+/// assert_eq!(fmt_dice(0), "`0d`");
+/// assert_eq!(fmt_dice(1), "`1d`");
+/// assert_eq!(fmt_dice(2), "`2d`");
 /// ```
 pub fn fmt_dice(num_dice: u8) -> String {
-    let unit = if num_dice == 1 { "die" } else { "dice" };
-    format!("{num_dice} {unit}")
+    format!("`{num_dice}d`")
 }
 
 /// Health check

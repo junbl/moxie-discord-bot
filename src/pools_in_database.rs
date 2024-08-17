@@ -137,21 +137,8 @@ impl Pools {
     pub fn new(conn: DatabaseConnection) -> Self {
         Self { conn }
     }
-    pub async fn roll(
-        &self,
-        scope: Scope,
-        pool_name: &str,
-        rolls: &RollDistribution,
-    ) -> Result<Option<(PoolInDb, Vec<Roll>)>, anyhow::Error> {
-        let mut pool = match self.get(scope, pool_name).await {
-            Ok(p) => Ok(p),
-            Err(MoxieError::PoolNotFound) => {
-                return Ok(None);
-            }
-            Err(e) => Err(e),
-        }?;
-        let rolls = pool.roll(&self.conn, rolls).await?;
-        Ok(Some((pool, rolls)))
+    pub fn conn(&self) -> &DatabaseConnection {
+        &self.conn
     }
     pub async fn get(&self, scope: Scope, pool_name: &str) -> Result<PoolInDb, MoxieError> {
         let conn = &self.conn;
@@ -221,13 +208,7 @@ impl Pools {
         server_res.and(channel_res).map(|_| ())
     }
 
-    pub async fn set(
-        &self,
-        scope: Scope,
-        pool_name: &str,
-        num_dice: SetValue,
-    ) -> Result<u8, Error> {
-        let pool = self.get(scope, pool_name).await?;
+    pub async fn set(&self, pool: &PoolInDb, num_dice: SetValue) -> Result<u8, Error> {
         let new_size = match num_dice {
             SetValue::Add(add) => pool.pool.dice() + add,
             SetValue::Subtract(sub) => pool.pool.dice() - sub,
