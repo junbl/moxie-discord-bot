@@ -8,6 +8,8 @@ use tracing::{info, instrument};
 
 use crate::{
     commands::{fmt_dice, Scope},
+    error::MoxieError,
+    pools_in_database::PoolInDb,
     rolls::{Pool, Roll, Thorn},
     Context, Error,
 };
@@ -89,15 +91,20 @@ pub fn thorns_str(thorns: &[Thorn]) -> String {
 }
 
 pub fn print_pool_results(rolls: &[Roll], pool: Pool) -> String {
+    use std::fmt::Write;
+    let mut msg = String::new();
     let remaining = pool.dice();
-    let mut msg = format!(
-        "# {}\n### dropped: `{}` remaining: `{}`",
-        rolls_str(rolls, false, false),
-        rolls.len() as u8 - remaining,
-        remaining,
-    );
+    if !rolls.is_empty() {
+        write!(
+            msg,
+            "# {}\n### {} → {}",
+            rolls_str(rolls, false, false),
+            fmt_dice(rolls.len() as u8),
+            fmt_dice(remaining),
+        )
+        .unwrap();
+    }
     if remaining == 0 {
-        use std::fmt::Write;
         write!(msg, "\n### Pool depleted!").unwrap();
     }
     // if print_outcome {
@@ -137,7 +144,7 @@ async fn autocomplete_pool_name<'a>(
     prefix_command,
     aliases("p"),
     subcommand_required,
-    subcommands("new", "roll", "reset", "delete", "set", "check", "list")
+    subcommands("new", "roll", "reset", "delete", "set", "check", "list", "droproll")
 )]
 pub async fn pool(_: Context<'_>) -> Result<(), Error> {
     Ok(())
@@ -172,6 +179,24 @@ pub async fn roll(
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: roll");
+    let mut pool = get_pool_try_all_scopes(&ctx, &pool_name, scope).await?;
+    let rolls = pool
+        .roll(ctx.data().pools.conn(), &ctx.data().roll_dist)
+        .await?;
+    ctx.say(format!(
+        "Rolled pool `{pool_name}` with {}\n{}",
+        fmt_dice(rolls.len() as u8),
+        print_pool_results(&rolls, pool.pool)
+    ))
+    .await?;
+    Ok(())
+}
+
+async fn get_pool_try_all_scopes(
+    ctx: &Context<'_>,
+    pool_name: &str,
+    scope: Option<Scope>,
+) -> Result<PoolInDb, MoxieError> {
     let scopes_to_check = if let Some(scope) = scope {
         vec![scope]
     } else {
@@ -180,32 +205,14 @@ pub async fn roll(
             .chain(ctx.guild_id().map(Scope::Server))
             .collect()
     };
-    let pool_name = pool_name.as_str();
-    let mut rolls = None;
+    let mut pool = Err(MoxieError::PoolNotFound);
     for scope in scopes_to_check {
-        if let Some(p) = ctx
-            .data()
-            .pools
-            .roll(scope, pool_name, &ctx.data().roll_dist)
-            .await
-            .ok()
-            .flatten()
-        {
-            let _ = rolls.insert(p);
+        if let Ok(p) = ctx.data().pools.get(scope, pool_name).await {
+            pool = Ok(p);
             break;
         }
     }
-    if let Some((pool, rolls)) = rolls {
-        ctx.say(format!(
-            "Rolled pool `{pool_name}` with {}\n{}",
-            fmt_dice(rolls.len() as u8),
-            print_pool_results(&rolls, pool.pool)
-        ))
-        .await?;
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!("Pool `{pool_name}` not found!").into())
-    }
+    pool
 }
 /// Sets a pool's current dice back to the number of dice it started with.
 #[poise::command(prefix_command, slash_command)]
@@ -288,10 +295,10 @@ pub async fn list(
         .into_iter()
         .map(|pool| {
             format!(
-                "{:width$}{}/{}",
+                "{:width$}{}/{}d",
                 pool.name(),
                 pool.pool.dice(),
-                fmt_dice(pool.original_size())
+                pool.original_size()
             )
         })
         .join("\n");
@@ -314,18 +321,27 @@ pub async fn set(
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: set");
-    let new_size = ctx
-        .data()
-        .pools
-        .set(scope_or_default(scope, &ctx), &pool_name, num_dice)
-        .await?;
-    ctx.say(format!(
-        "Pool `{pool_name}` now has {}!",
-        fmt_dice(new_size),
-    ))
-    .await?;
+    let (_, message) = set_inner(ctx, pool_name, num_dice, scope).await?;
+    ctx.say(message).await?;
     Ok(())
 }
+pub async fn set_inner(
+    ctx: Context<'_>,
+    pool_name: String,
+    num_dice: SetValue,
+    scope: Option<Scope>,
+) -> Result<(PoolInDb, String), Error> {
+    let mut pool = get_pool_try_all_scopes(&ctx, &pool_name, scope).await?;
+    let starting_size = pool.pool.dice();
+    let new_size = ctx.data().pools.set(&mut pool, num_dice).await?;
+    let message = format!(
+        "Set pool `{pool_name}` {} → {}!",
+        fmt_dice(starting_size),
+        fmt_dice(new_size)
+    );
+    Ok((pool, message))
+}
+
 /// Checks the current number of dice in a pool without rolling it.
 #[poise::command(prefix_command, slash_command)]
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
@@ -351,10 +367,41 @@ async fn check_inner(
         .get(scope_or_default(scope, &ctx), &pool_name)
         .await?;
     ctx.say(format!(
-        "Pool `{}` currently has {}/{} remaining!",
+        "Pool `{}` currently has `{}`/{} remaining!",
         pool_name,
         pool.pool.dice(),
         fmt_dice(pool.original_size()),
+    ))
+    .await?;
+    Ok(())
+}
+
+/// Checks the current number of dice in a pool without rolling it.
+#[poise::command(prefix_command, slash_command)]
+#[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
+pub async fn droproll(
+    ctx: Context<'_>,
+    #[autocomplete = "autocomplete_pool_name"]
+    #[description = "Name of the pool"]
+    pool_name: String,
+    #[description = "Number of dice to drop before rolling - default 1"] num_dice_to_drop: Option<
+        u8,
+    >,
+    #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
+) -> Result<(), Error> {
+    let (mut pool, message) = set_inner(
+        ctx,
+        pool_name,
+        SetValue::Subtract(num_dice_to_drop.unwrap_or(1)),
+        scope,
+    )
+    .await?;
+    let rolls = pool
+        .roll(ctx.data().pools.conn(), &ctx.data().roll_dist)
+        .await?;
+    ctx.say(format!(
+        "{message}\n{}",
+        print_pool_results(&rolls, pool.pool)
     ))
     .await?;
     Ok(())
