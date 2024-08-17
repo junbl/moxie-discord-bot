@@ -185,6 +185,9 @@ impl Pool {
     pub fn dice(&self) -> u8 {
         self.dice
     }
+    pub fn set_dice(&mut self, new_dice: u8) {
+        self.dice = new_dice;
+    }
     pub fn roll(&mut self, rolls: &RollDistribution) -> Vec<Roll> {
         let mut rng = thread_rng();
         self.roll_rng(&mut rng, rolls)

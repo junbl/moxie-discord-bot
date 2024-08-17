@@ -94,7 +94,7 @@ pub fn print_pool_results(rolls: &[Roll], pool: Pool) -> String {
     use std::fmt::Write;
     let mut msg = String::new();
     let remaining = pool.dice();
-    if rolls.is_empty() {
+    if !rolls.is_empty() {
         write!(
             msg,
             "# {}\n### {} → {}",
@@ -331,11 +331,11 @@ pub async fn set_inner(
     num_dice: SetValue,
     scope: Option<Scope>,
 ) -> Result<(PoolInDb, String), Error> {
-    let pool = get_pool_try_all_scopes(&ctx, &pool_name, scope).await?;
+    let mut pool = get_pool_try_all_scopes(&ctx, &pool_name, scope).await?;
     let starting_size = pool.pool.dice();
-    let new_size = ctx.data().pools.set(&pool, num_dice).await?;
+    let new_size = ctx.data().pools.set(&mut pool, num_dice).await?;
     let message = format!(
-        "Set `{pool_name}` {} → {}!",
+        "Set pool `{pool_name}` {} → {}!",
         fmt_dice(starting_size),
         fmt_dice(new_size)
     );
