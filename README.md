@@ -2,15 +2,35 @@
 
 Mox is a Discord bot to help with playing RPGs in the Moxie system.
 
-Its main function is to interact with diminishing pools. You can roll a pool like this:
+To see all your options, use the help command:
 
 ```
-/quickpool 6
+/help
 ```
 
-This will roll six dice and show you the results. If you want Mox to keep track of your pool for multiple rolls, you'll want the `/pool` command.
+A few commands are detailed below, but always use `/help` for the most up to date options.
+
+## `/roll`
+The roll command lets you roll a pool of dice with thorns, and displays your final result (after any cuts).
+
+To roll dice, give Mox an expression like `2d` (two d6s) or `3d2t` (three d6s and two thorns).
+
+There are also a few more options for variations on normal rolls:
+
+### `mastery`
+The first die rolled will be treated as your mastery die. Note that this will not automatically add +1d.
+
+### `fives_count_as_sixes`
+Treats any rolls of five as six. That means if your max roll is a 5, you'll get a perfect, and you can crit if you roll multiple fives OR sixes.
+
+### `fours_count_as_ones`
+Treats any rolls of four as one. That means if your max roll is a 4, you'll get a grim.
+
+### `maximum_drama`
+Same as doing `fives_count_as_sixes` and `fours_count_as_ones`.
 
 ## `/pool`
+The `pool` command lets you create and manage persistent diminishing pools.
 
 ### Quickstart
 You can start a persistent pool like this:
@@ -33,9 +53,9 @@ Most pool operations take an optional `scope` parameter - by default, pools are 
 /pool new 8 Dragon server
 ```
 
-If you want a pool to stay private to only you, you can use the pool commands in a DM with Mox.
+If you want a pool to stay private to only you, you can use the `pool` commands in a DM with Mox.
 
-### `/pool` command reference
+### Subcommands
 #### `new`
 Creates a pool.
 

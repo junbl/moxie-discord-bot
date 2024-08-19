@@ -99,11 +99,13 @@ pub async fn roll(
     #[description = "One of your dice will crit on a 6. Does not add +1d."] mastery: Option<bool>,
     #[description = "Treats rolls of 5 as 6"] fives_count_as_sixes: Option<bool>,
     #[description = "Treats rolls of 4 as 1"] fours_count_as_ones: Option<bool>,
+    #[description = "Treats 5s as 6s and 4s as 1s (same as the individual options)"] maximum_drama: Option<bool>,
 ) -> Result<(), Error> {
     let (rolls, thorns) = dice.roll(&ctx.data().roll_dist, &ctx.data().thorn_dist);
     let mastery = mastery.unwrap_or_default();
-    let fives_count_as_sixes = fives_count_as_sixes.unwrap_or_default();
-    let fours_count_as_ones = fours_count_as_ones.unwrap_or_default();
+    let maximum_drama = maximum_drama.unwrap_or_default();
+    let fives_count_as_sixes = maximum_drama || fives_count_as_sixes.unwrap_or_default();
+    let fours_count_as_ones = maximum_drama || fours_count_as_ones.unwrap_or_default();
     let roll_str = rolls_str(&rolls, mastery, fives_count_as_sixes);
     let mut message = format!("# {roll_str}");
     if !thorns.is_empty() {
