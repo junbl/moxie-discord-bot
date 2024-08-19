@@ -36,6 +36,12 @@ impl Roll {
             other => other,
         }
     }
+    pub fn fours_count_as_ones(self) -> Self {
+        match self {
+            Roll::Messy(4) => Roll::Grim(4),
+            other => other,
+        }
+    }
     pub fn cut(self, thorn: Thorn) -> Roll {
         if thorn.is_cut() {
             match self {
@@ -66,26 +72,30 @@ impl std::fmt::Display for Roll {
 
 pub fn roll_result(
     rolls: impl IntoIterator<Item = Roll>,
-    style_die: bool,
+    mastery: bool,
     fives_count_as_sixes: bool,
+    fours_count_as_ones: bool,
 ) -> Roll {
     let mut current_max = Roll::Grim(1);
-    let mut any_style_crit = false;
+    let mut any_mastery_crit = false;
     for (index, mut roll) in rolls.into_iter().enumerate() {
         if fives_count_as_sixes {
             roll = roll.fives_count_as_sixes();
         }
-        let this_roll_style_crit = style_die && index == 0 && roll.is_perfect();
-        any_style_crit |= this_roll_style_crit;
+        if fours_count_as_ones {
+            roll = roll.fours_count_as_ones();
+        }
+        let this_roll_style_crit = mastery && index == 0 && roll.is_perfect();
+        any_mastery_crit |= this_roll_style_crit;
         tracing::info!(
             index,
             ?roll,
-            any_style_crit,
+            any_mastery_crit,
             this_roll_style_crit,
             perfect = roll.is_perfect(),
             "roll"
         );
-        if any_style_crit && !this_roll_style_crit && roll.is_perfect() {
+        if any_mastery_crit && !this_roll_style_crit && roll.is_perfect() {
             tracing::info!("Multi crit");
             current_max = Roll::MultiCritical;
             break;
@@ -227,12 +237,12 @@ mod tests {
             ),
         ];
         for (input, expected) in inputs {
-            assert_eq!(roll_result(input, false, false), expected);
+            assert_eq!(roll_result(input, false, false, false), expected);
         }
     }
 
     #[test]
-    fn style_die() {
+    fn mastery() {
         let inputs = [
             (vec![Roll::Perfect(6)], Roll::Critical),
             (
@@ -250,7 +260,7 @@ mod tests {
             ),
         ];
         for (input, expected) in inputs {
-            assert_eq!(roll_result(input, true, false), expected);
+            assert_eq!(roll_result(input, true, false, false), expected);
         }
     }
     #[test]
@@ -261,17 +271,28 @@ mod tests {
             (vec![Roll::Perfect(6), Roll::Messy(5)], Roll::Critical),
         ];
         for (input, expected) in inputs {
-            assert_eq!(roll_result(input, false, true), expected);
+            assert_eq!(roll_result(input, false, true, false), expected);
         }
     }
     #[test]
-    fn style_die_and_fives_count_as_sixes() {
+    fn mastery_and_fives_count_as_sixes() {
         let inputs = [
             (vec![Roll::Messy(5)], Roll::Critical),
             (vec![Roll::Messy(5), Roll::Perfect(6)], Roll::MultiCritical),
         ];
         for (input, expected) in inputs {
-            assert_eq!(roll_result(input, true, true), expected);
+            assert_eq!(roll_result(input, true, true, false), expected);
+        }
+    }
+    #[test]
+    fn fives_count_as_sixes_and_fours_count_as_ones() {
+        let inputs = [
+            (vec![Roll::Messy(4)], Roll::Grim(4)),
+            (vec![Roll::Messy(4), Roll::Grim(1)], Roll::Grim(4)),
+            (vec![Roll::Messy(4), Roll::Messy(5)], Roll::Perfect(5)),
+        ];
+        for (input, expected) in inputs {
+            assert_eq!(roll_result(input, false, true, true), expected);
         }
     }
 }
