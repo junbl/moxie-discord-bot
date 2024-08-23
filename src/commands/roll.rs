@@ -4,7 +4,7 @@ use rand::thread_rng;
 use std::fmt::Write;
 
 use crate::commands::pool::{rolls_str, thorns_str};
-use crate::rolls::{roll_result, Roll, RollDistribution, Thorn, ThornDistribution};
+use crate::rolls::{roll_replacements, roll_result, Roll, RollDistribution, Thorn, ThornDistribution};
 use crate::{Context, Error};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -93,6 +93,7 @@ mod parse {
 ///
 /// Use an expression like `/roll 3d2t`.
 #[poise::command(slash_command, prefix_command)]
+#[allow(clippy::too_many_arguments)]
 pub async fn roll(
     ctx: Context<'_>,
     #[description = "A roll expression, like `2d` or `3d1t`"] dice: RollExpr,
@@ -100,19 +101,34 @@ pub async fn roll(
     #[description = "Treats rolls of 5 as 6"] fives_count_as_sixes: Option<bool>,
     #[description = "Treats rolls of 4 as 1"] fours_count_as_ones: Option<bool>,
     #[description = "Treats 5s as 6s and 4s as 1s (same as the individual options)"] maximum_drama: Option<bool>,
+    #[description = "Treats rolls of 1 as 4"] ones_count_as_fours: Option<bool>,
+    #[description = "Treats 5s as 6s and 1s as 4s (same as the individual options)"]
+    really_good_at_this: Option<bool>,
 ) -> Result<(), Error> {
     let (rolls, thorns) = dice.roll(&ctx.data().roll_dist, &ctx.data().thorn_dist);
     let mastery = mastery.unwrap_or_default();
     let maximum_drama = maximum_drama.unwrap_or_default();
-    let fives_count_as_sixes = maximum_drama || fives_count_as_sixes.unwrap_or_default();
+    let really_good_at_this = really_good_at_this.unwrap_or_default();
+    let fives_count_as_sixes =
+        maximum_drama || really_good_at_this || fives_count_as_sixes.unwrap_or_default();
     let fours_count_as_ones = maximum_drama || fours_count_as_ones.unwrap_or_default();
-    let roll_str = rolls_str(&rolls, mastery, fives_count_as_sixes);
+    let ones_count_as_fours = really_good_at_this || ones_count_as_fours.unwrap_or_default();
+
+    let roll_str = rolls_str(&rolls, mastery);
     let mut message = format!("# {roll_str}");
     if !thorns.is_empty() {
         write!(message, " • {}", thorns_str(&thorns)).unwrap()
     }
 
-    let roll = roll_result(rolls, mastery, fives_count_as_sixes, fours_count_as_ones);
+    let roll = roll_result(
+        rolls,
+        mastery,
+        &roll_replacements(
+            fives_count_as_sixes,
+            fours_count_as_ones,
+            ones_count_as_fours,
+        ),
+    );
     let final_roll = thorns.into_iter().fold(roll, Roll::cut);
     if roll != final_roll {
         write!(message, "\n### `{roll}`, cut to...").unwrap();

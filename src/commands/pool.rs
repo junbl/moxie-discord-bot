@@ -29,25 +29,24 @@ pub async fn subcommand(ctx: Context<'_>, arg: String) -> Result<(), crate::Erro
     Ok(())
 }
 
-fn get_die_emoji(roll: Roll, fives_count_as_sixes: bool) -> &'static str {
-    [
-        (6, "<:d66:1270889063628537910>"),
-        (
-            5,
-            if fives_count_as_sixes {
-                "<:d65_perfect:1270928629286567976>"
-            } else {
-                "<:d65:1270889051871776809>"
-            },
+fn get_die_emoji(roll: Roll) -> &'static str {
+    match roll {
+        Roll::Grim(1) => "<:d61:1270888983051636777>",
+        Roll::Grim(2) => "<:d62:1270889005373984899>",
+        Roll::Grim(3) => "<:d63:1270889037514670142>",
+        Roll::Grim(4) => "<:d64:1270889188190978199>",
+        Roll::Messy(1) => "<:d61:1270888983051636777>",
+        Roll::Messy(4) => "<:d64:1270889188190978199>",
+        Roll::Messy(5) => "<:d65:1270889051871776809>",
+        Roll::Perfect(5) => "<:d65_perfect:1270928629286567976>",
+        Roll::Perfect(6) => "<:d66:1270889063628537910>",
+        other => get_die_emoji(
+            other
+                .as_number()
+                .try_into()
+                .expect("Rolls must only be in the 1-6 range"),
         ),
-        (4, "<:d64:1270889188190978199>"),
-        (3, "<:d63:1270889037514670142>"),
-        (2, "<:d62:1270889005373984899>"),
-        (1, "<:d61:1270888983051636777>"),
-    ]
-    .into_iter()
-    .find_map(|(roll_number, emoji)| (roll.as_number() == roll_number).then_some(emoji))
-    .expect("Rolls must only be in the 1-6 range")
+    }
 }
 
 fn get_thorn_emoji(thorn: Thorn) -> &'static str {
@@ -66,12 +65,9 @@ fn get_thorn_emoji(thorn: Thorn) -> &'static str {
     .expect("Thorns must only be in the 1-8 range")
 }
 
-pub fn rolls_str(rolls: &[Roll], style_die: bool, fives_count_as_sixes: bool) -> String {
-    let mut emoji_iter = rolls
-        .iter()
-        .copied()
-        .map(|roll| get_die_emoji(roll, fives_count_as_sixes));
-    if style_die {
+pub fn rolls_str(rolls: &[Roll], mastery_die: bool) -> String {
+    let mut emoji_iter = rolls.iter().copied().map(get_die_emoji);
+    if mastery_die {
         emoji_iter
             .enumerate()
             .map(|(i, emoji)| {
@@ -98,7 +94,7 @@ pub fn print_pool_results(rolls: &[Roll], pool: Pool) -> String {
         write!(
             msg,
             "# {}\n### {} → {}",
-            rolls_str(rolls, false, false),
+            rolls_str(rolls, false),
             fmt_dice(rolls.len() as u8),
             fmt_dice(remaining),
         )

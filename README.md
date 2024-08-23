@@ -15,19 +15,7 @@ The roll command lets you roll a pool of dice with thorns, and displays your fin
 
 To roll dice, give Mox an expression like `2d` (two d6s) or `3d2t` (three d6s and two thorns).
 
-There are also a few more options for variations on normal rolls:
-
-### `mastery`
-The first die rolled will be treated as your mastery die. Note that this will not automatically add +1d.
-
-### `fives_count_as_sixes`
-Treats any rolls of five as six. That means if your max roll is a 5, you'll get a perfect, and you can crit if you roll multiple fives OR sixes.
-
-### `fours_count_as_ones`
-Treats any rolls of four as one. That means if your max roll is a 4, you'll get a grim.
-
-### `maximum_drama`
-Same as doing `fives_count_as_sixes` and `fours_count_as_ones`.
+There are also a few more options for variations on normal rolls. Use `/help roll` to see information on those.
 
 ## `/pool`
 The `pool` command lets you create and manage persistent diminishing pools.
