@@ -24,22 +24,27 @@ impl Roll {
     pub fn is_perfect(self) -> bool {
         matches!(self, Roll::Perfect(_))
     }
+    // pub fn is_critical(self) -> bool {
+    //     matches!(self, Roll::Critical | Roll::MultiCritical)
+    // }
     pub fn as_number(self) -> u8 {
         match self {
             Roll::Disaster(r) | Roll::Grim(r) | Roll::Messy(r) | Roll::Perfect(r) => r,
             Roll::Critical | Roll::MultiCritical => 6,
         }
     }
-    pub fn fives_count_as_sixes(self) -> Self {
-        match self {
-            Roll::Messy(5) => Roll::Perfect(5),
-            other => other,
-        }
-    }
-    pub fn fours_count_as_ones(self) -> Self {
-        match self {
-            Roll::Messy(4) => Roll::Grim(4),
-            other => other,
+    pub fn replace_roll(self, from: Roll, to: Roll) -> Self {
+        if self == from {
+            let from_number = from.as_number();
+            match to {
+                Roll::Disaster(_) => Roll::Disaster(from_number),
+                Roll::Grim(_) => Roll::Grim(from_number),
+                Roll::Messy(_) => Roll::Messy(from_number),
+                Roll::Perfect(_) => Roll::Perfect(from_number),
+                crits => crits,
+            }
+        } else {
+            self
         }
     }
     pub fn cut(self, thorn: Thorn) -> Roll {
@@ -53,6 +58,19 @@ impl Roll {
             }
         } else {
             self
+        }
+    }
+}
+
+impl TryFrom<u8> for Roll {
+    type Error = u8;
+
+    fn try_from(roll: u8) -> Result<Self, Self::Error> {
+        match roll {
+            r @ 1..=3 => Ok(Roll::Grim(r)),
+            r @ (4 | 5) => Ok(Roll::Messy(r)),
+            r @ 6 => Ok(Roll::Perfect(r)),
+            other => Err(other),
         }
     }
 }
@@ -73,17 +91,13 @@ impl std::fmt::Display for Roll {
 pub fn roll_result(
     rolls: impl IntoIterator<Item = Roll>,
     mastery: bool,
-    fives_count_as_sixes: bool,
-    fours_count_as_ones: bool,
+    roll_replacements: &[(Roll, Roll)],
 ) -> Roll {
     let mut current_max = Roll::Grim(1);
     let mut any_mastery_crit = false;
     for (index, mut roll) in rolls.into_iter().enumerate() {
-        if fives_count_as_sixes {
-            roll = roll.fives_count_as_sixes();
-        }
-        if fours_count_as_ones {
-            roll = roll.fours_count_as_ones();
+        for (from, to) in roll_replacements {
+            roll = roll.replace_roll(*from, *to);
         }
         let this_roll_style_crit = mastery && index == 0 && roll.is_perfect();
         any_mastery_crit |= this_roll_style_crit;
@@ -111,6 +125,24 @@ pub fn roll_result(
     }
     current_max
 }
+
+pub fn roll_replacements(
+    fives_count_as_sixes: bool,
+    fours_count_as_ones: bool,
+    ones_count_as_fours: bool,
+) -> Vec<(Roll, Roll)> {
+    let mut roll_replacements = vec![];
+    if fives_count_as_sixes {
+        roll_replacements.push((Roll::Messy(5), Roll::Perfect(5)))
+    }
+    if ones_count_as_fours {
+        roll_replacements.push((Roll::Grim(1), Roll::Messy(1)))
+    }
+    if fours_count_as_ones {
+        roll_replacements.push((Roll::Messy(4), Roll::Grim(1)))
+    }
+    roll_replacements
+}
 pub struct RollDistribution {
     dist: Uniform<u8>,
 }
@@ -131,12 +163,8 @@ impl RollDistribution {
 impl Distribution<Roll> for RollDistribution {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Roll {
         let roll = self.dist.sample(rng);
-        match roll {
-            r @ 1..=3 => Roll::Grim(r),
-            r @ (4 | 5) => Roll::Messy(r),
-            r @ 6 => Roll::Perfect(r),
-            _ => unreachable!(),
-        }
+        roll.try_into()
+            .expect("RollDistribution will only produce values in the acceptable range")
     }
 }
 
@@ -221,6 +249,8 @@ impl Pool {
 
 #[cfg(test)]
 mod tests {
+    use crate::rolls::roll_replacements;
+
     use super::{roll_result, Roll};
 
     #[test]
@@ -237,7 +267,7 @@ mod tests {
             ),
         ];
         for (input, expected) in inputs {
-            assert_eq!(roll_result(input, false, false, false), expected);
+            assert_eq!(roll_result(input, false, &[]), expected);
         }
     }
 
@@ -260,7 +290,7 @@ mod tests {
             ),
         ];
         for (input, expected) in inputs {
-            assert_eq!(roll_result(input, true, false, false), expected);
+            assert_eq!(roll_result(input, true, &[]), expected);
         }
     }
     #[test]
@@ -271,7 +301,10 @@ mod tests {
             (vec![Roll::Perfect(6), Roll::Messy(5)], Roll::Critical),
         ];
         for (input, expected) in inputs {
-            assert_eq!(roll_result(input, false, true, false), expected);
+            assert_eq!(
+                roll_result(input, false, &[(Roll::Messy(5), Roll::Perfect(5))]),
+                expected
+            );
         }
     }
     #[test]
@@ -281,7 +314,10 @@ mod tests {
             (vec![Roll::Messy(5), Roll::Perfect(6)], Roll::MultiCritical),
         ];
         for (input, expected) in inputs {
-            assert_eq!(roll_result(input, true, true, false), expected);
+            assert_eq!(
+                roll_result(input, true, &[(Roll::Messy(5), Roll::Perfect(5))]),
+                expected
+            );
         }
     }
     #[test]
@@ -292,7 +328,24 @@ mod tests {
             (vec![Roll::Messy(4), Roll::Messy(5)], Roll::Perfect(5)),
         ];
         for (input, expected) in inputs {
-            assert_eq!(roll_result(input, false, true, true), expected);
+            assert_eq!(
+                roll_result(input, false, &roll_replacements(true, true, false)),
+                expected
+            );
+        }
+    }
+    #[test]
+    fn fives_count_as_sixes_and_ones_count_as_fours() {
+        let inputs = [
+            (vec![Roll::Grim(1)], Roll::Messy(1)),
+            (vec![Roll::Grim(1), Roll::Grim(2)], Roll::Messy(1)),
+            (vec![Roll::Messy(5), Roll::Grim(1)], Roll::Perfect(5)),
+        ];
+        for (input, expected) in inputs {
+            assert_eq!(
+                roll_result(input, false, &roll_replacements(true, false, true)),
+                expected
+            );
         }
     }
 }
