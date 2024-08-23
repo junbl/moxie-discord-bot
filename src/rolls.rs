@@ -33,8 +33,14 @@ impl Roll {
             Roll::Critical | Roll::MultiCritical => 6,
         }
     }
-    pub fn replace_roll(self, from: Roll, to: Roll) -> Self {
-        if self == from {
+    pub fn replace_roll(self, replacements: &[(Roll, Roll)]) -> Self {
+        replacements
+            .iter()
+            .find_map(|(from, to)| self.replace_one_roll(*from, *to))
+            .unwrap_or(self)
+    }
+    pub fn replace_one_roll(self, from: Roll, to: Roll) -> Option<Self> {
+        (self == from).then(|| {
             let from_number = from.as_number();
             match to {
                 Roll::Disaster(_) => Roll::Disaster(from_number),
@@ -43,9 +49,7 @@ impl Roll {
                 Roll::Perfect(_) => Roll::Perfect(from_number),
                 crits => crits,
             }
-        } else {
-            self
-        }
+        })
     }
     pub fn cut(self, thorn: Thorn) -> Roll {
         if thorn.is_cut() {
@@ -88,17 +92,10 @@ impl std::fmt::Display for Roll {
     }
 }
 
-pub fn roll_result(
-    rolls: impl IntoIterator<Item = Roll>,
-    mastery: bool,
-    roll_replacements: &[(Roll, Roll)],
-) -> Roll {
+pub fn roll_result(rolls: impl IntoIterator<Item = Roll>, mastery: bool) -> Roll {
     let mut current_max = Roll::Grim(1);
     let mut any_mastery_crit = false;
-    for (index, mut roll) in rolls.into_iter().enumerate() {
-        for (from, to) in roll_replacements {
-            roll = roll.replace_roll(*from, *to);
-        }
+    for (index, roll) in rolls.into_iter().enumerate() {
         let this_roll_style_crit = mastery && index == 0 && roll.is_perfect();
         any_mastery_crit |= this_roll_style_crit;
         tracing::info!(
@@ -126,6 +123,15 @@ pub fn roll_result(
     current_max
 }
 
+pub fn replace_rolls(
+    rolls: impl IntoIterator<Item = Roll>,
+    roll_replacements: &[(Roll, Roll)],
+) -> Vec<Roll> {
+    rolls
+        .into_iter()
+        .map(|roll| roll.replace_roll(roll_replacements))
+        .collect()
+}
 pub fn roll_replacements(
     fives_count_as_sixes: bool,
     fours_count_as_ones: bool,
@@ -249,7 +255,7 @@ impl Pool {
 
 #[cfg(test)]
 mod tests {
-    use crate::rolls::roll_replacements;
+    use crate::rolls::{replace_rolls, roll_replacements};
 
     use super::{roll_result, Roll};
 
@@ -267,7 +273,7 @@ mod tests {
             ),
         ];
         for (input, expected) in inputs {
-            assert_eq!(roll_result(input, false, &[]), expected);
+            assert_eq!(roll_result(input, false), expected);
         }
     }
 
@@ -290,7 +296,7 @@ mod tests {
             ),
         ];
         for (input, expected) in inputs {
-            assert_eq!(roll_result(input, true, &[]), expected);
+            assert_eq!(roll_result(input, true), expected);
         }
     }
     #[test]
@@ -301,10 +307,8 @@ mod tests {
             (vec![Roll::Perfect(6), Roll::Messy(5)], Roll::Critical),
         ];
         for (input, expected) in inputs {
-            assert_eq!(
-                roll_result(input, false, &[(Roll::Messy(5), Roll::Perfect(5))]),
-                expected
-            );
+            let input = replace_rolls(input, &[(Roll::Messy(5), Roll::Perfect(5))]);
+            assert_eq!(roll_result(input, false,), expected);
         }
     }
     #[test]
@@ -314,10 +318,8 @@ mod tests {
             (vec![Roll::Messy(5), Roll::Perfect(6)], Roll::MultiCritical),
         ];
         for (input, expected) in inputs {
-            assert_eq!(
-                roll_result(input, true, &[(Roll::Messy(5), Roll::Perfect(5))]),
-                expected
-            );
+            let input = replace_rolls(input, &[(Roll::Messy(5), Roll::Perfect(5))]);
+            assert_eq!(roll_result(input, true,), expected);
         }
     }
     #[test]
@@ -328,10 +330,8 @@ mod tests {
             (vec![Roll::Messy(4), Roll::Messy(5)], Roll::Perfect(5)),
         ];
         for (input, expected) in inputs {
-            assert_eq!(
-                roll_result(input, false, &roll_replacements(true, true, false)),
-                expected
-            );
+            let input = replace_rolls(input, &roll_replacements(true, true, false));
+            assert_eq!(roll_result(input, false), expected);
         }
     }
     #[test]
@@ -342,10 +342,8 @@ mod tests {
             (vec![Roll::Messy(5), Roll::Grim(1)], Roll::Perfect(5)),
         ];
         for (input, expected) in inputs {
-            assert_eq!(
-                roll_result(input, false, &roll_replacements(true, false, true)),
-                expected
-            );
+            let input = replace_rolls(input, &roll_replacements(true, false, true));
+            assert_eq!(roll_result(input, false,), expected);
         }
     }
 }

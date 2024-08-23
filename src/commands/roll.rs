@@ -4,7 +4,9 @@ use rand::thread_rng;
 use std::fmt::Write;
 
 use crate::commands::pool::{rolls_str, thorns_str};
-use crate::rolls::{roll_replacements, roll_result, Roll, RollDistribution, Thorn, ThornDistribution};
+use crate::rolls::{
+    replace_rolls, roll_replacements, roll_result, Roll, RollDistribution, Thorn, ThornDistribution,
+};
 use crate::{Context, Error};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -100,7 +102,8 @@ pub async fn roll(
     #[description = "One of your dice will crit on a 6. Does not add +1d."] mastery: Option<bool>,
     #[description = "Treats rolls of 5 as 6"] fives_count_as_sixes: Option<bool>,
     #[description = "Treats rolls of 4 as 1"] fours_count_as_ones: Option<bool>,
-    #[description = "Treats 5s as 6s and 4s as 1s (same as the individual options)"] maximum_drama: Option<bool>,
+    #[description = "Treats 5s as 6s and 4s as 1s (same as the individual options)"]
+    maximum_drama: Option<bool>,
     #[description = "Treats rolls of 1 as 4"] ones_count_as_fours: Option<bool>,
     #[description = "Treats 5s as 6s and 1s as 4s (same as the individual options)"]
     really_good_at_this: Option<bool>,
@@ -114,21 +117,22 @@ pub async fn roll(
     let fours_count_as_ones = maximum_drama || fours_count_as_ones.unwrap_or_default();
     let ones_count_as_fours = really_good_at_this || ones_count_as_fours.unwrap_or_default();
 
-    let roll_str = rolls_str(&rolls, mastery);
-    let mut message = format!("# {roll_str}");
-    if !thorns.is_empty() {
-        write!(message, " • {}", thorns_str(&thorns)).unwrap()
-    }
-
-    let roll = roll_result(
+    let rolls = replace_rolls(
         rolls,
-        mastery,
         &roll_replacements(
             fives_count_as_sixes,
             fours_count_as_ones,
             ones_count_as_fours,
         ),
     );
+
+    let roll_str = rolls_str(&rolls, mastery);
+    let mut message = format!("# {roll_str}");
+    if !thorns.is_empty() {
+        write!(message, " • {}", thorns_str(&thorns)).unwrap()
+    }
+
+    let roll = roll_result(rolls, mastery);
     let final_roll = thorns.into_iter().fold(roll, Roll::cut);
     if roll != final_roll {
         write!(message, "\n### `{roll}`, cut to...").unwrap();
