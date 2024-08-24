@@ -125,21 +125,25 @@ pub async fn roll(
             ones_count_as_fours,
         ),
     );
+    let message = get_roll_outcome_message(&rolls, thorns, mastery);
 
-    let roll_str = rolls_str(&rolls, mastery);
+    ctx.say(message).await?;
+
+    Ok(())
+}
+
+pub fn get_roll_outcome_message(rolls: &[Roll], thorns: Vec<Thorn>, mastery: bool) -> String {
+    let roll_str = rolls_str(rolls, mastery);
     let mut message = format!("# {roll_str}");
     if !thorns.is_empty() {
         write!(message, " • {}", thorns_str(&thorns)).unwrap()
     }
 
-    let roll = roll_result(rolls, mastery);
+    let roll = roll_result(rolls.iter().copied(), mastery);
     let final_roll = thorns.into_iter().fold(roll, Roll::cut);
     if roll != final_roll {
         write!(message, "\n### `{roll}`, cut to...").unwrap();
     }
     write!(message, "\n# `{final_roll}`").unwrap();
-
-    ctx.say(message).await?;
-
-    Ok(())
+    message
 }
