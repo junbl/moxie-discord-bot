@@ -86,7 +86,7 @@ impl std::fmt::Display for Roll {
             Roll::Messy(_) => "Messy",
             Roll::Perfect(_) => "Perfect",
             Roll::Critical => "Critical!",
-            Roll::MultiCritical => r"Double critical!",
+            Roll::MultiCritical => "Double critical!",
         }
         .fmt(f)
     }
