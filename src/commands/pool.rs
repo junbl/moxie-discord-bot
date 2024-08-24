@@ -99,7 +99,7 @@ pub fn print_pool_results(
         let roll_outcome_message =
             get_roll_outcome_message(rolls, thorns.unwrap_or_default(), false);
         write!(msg, "\n{roll_outcome_message}",).unwrap();
-    } else {
+    } else if !rolls.is_empty() {
         write!(msg, "\n# {}", rolls_str(rolls, false)).unwrap();
     }
     if !rolls.is_empty() {
