@@ -107,6 +107,7 @@ pub async fn roll(
     #[description = "Treats rolls of 1 as 4"] ones_count_as_fours: Option<bool>,
     #[description = "Treats 5s as 6s and 1s as 4s (same as the individual options)"]
     really_good_at_this: Option<bool>,
+    #[description = "Prints out the given name with the roll to show what this roll is for."] name: Option<String>, 
 ) -> Result<(), Error> {
     let (rolls, thorns) = dice.roll(&ctx.data().roll_dist, &ctx.data().thorn_dist);
     let mastery = mastery.unwrap_or_default();
@@ -125,18 +126,34 @@ pub async fn roll(
             ones_count_as_fours,
         ),
     );
-    let message = get_roll_outcome_message(&rolls, thorns, mastery);
+    let message = get_roll_outcome_message(&ctx, &rolls, thorns, mastery, name);
 
     ctx.say(message).await?;
 
     Ok(())
 }
 
-pub fn get_roll_outcome_message(rolls: &[Roll], thorns: Vec<Thorn>, mastery: bool) -> String {
+pub fn get_roll_outcome_message(
+    ctx: &Context<'_>,
+    rolls: &[Roll], 
+    thorns: Vec<Thorn>, 
+    mastery: bool,
+    name: Option<String>,
+) -> String {
+    let username = ctx.author().id;
+    let mut message = String::new();
+
+    if let Some(ref roll_name) = name {
+        write!(message, "<@{username}> rolled for `{}`\n", roll_name).unwrap();
+    } else {
+        write!(message, "<@{username}> rolled\n").unwrap();
+    }
+
     let roll_str = rolls_str(rolls, mastery);
-    let mut message = format!("# {roll_str}");
+    write!(message, "# {roll_str}").unwrap();
+
     if !thorns.is_empty() {
-        write!(message, " • {}", thorns_str(&thorns)).unwrap()
+        write!(message, " • {}", thorns_str(&thorns)).unwrap();
     }
 
     let roll = roll_result(rolls.iter().copied(), mastery);
@@ -145,5 +162,6 @@ pub fn get_roll_outcome_message(rolls: &[Roll], thorns: Vec<Thorn>, mastery: boo
         write!(message, "\n### `{roll}`, cut to...").unwrap();
     }
     write!(message, "\n# `{final_roll}`").unwrap();
+
     message
 }
