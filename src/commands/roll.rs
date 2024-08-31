@@ -202,7 +202,7 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
             write_s!(message, " for `{roll_name}`");
         }
         if self.potency {
-            write_s!(message, " with potency!");
+            write_s!(message, " with **potency**");
         }
         writeln!(message, "!").unwrap();
 
