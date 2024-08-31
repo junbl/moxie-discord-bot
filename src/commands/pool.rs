@@ -172,7 +172,7 @@ async fn roll_inner(
     let rolls = pool
         .roll(ctx.data().pools.conn(), &ctx.data().roll_dist)
         .await?;
-    let show_outcome = show_outcome.unwrap_or_default();
+    let show_outcome = thorns.is_some() || show_outcome.unwrap_or_default();
 
     let thorns = thorns.map(|thorns| {
         let mut rng = rand::thread_rng();
@@ -182,6 +182,7 @@ async fn roll_inner(
             .collect()
     });
     let pool_result_msg = RollOutcomeMessageBuilder::new(&rolls)
+        .username(ctx)
         .pool_name(pool_name)
         .pool_remaining(pool.pool.dice())
         .hide_outcome(!show_outcome)

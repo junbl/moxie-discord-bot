@@ -212,22 +212,25 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
         }
 
         if let Some(ref thorns) = self.thorns {
+            if !self.rolls.is_empty() {
+                write_s!(message, " • ");
+            } else {
+                write_s!(message, "# ");
+            }
             if !thorns.is_empty() {
-                write_s!(message, " • {}", thorns_str(thorns));
+                write_s!(message, "{}", thorns_str(thorns));
             }
         }
         if let Some(pool_remaining) = self.pool_remaining {
-            if !self.rolls.is_empty() {
-                write_s!(
-                    message,
-                    "\n### {} → {}",
-                    fmt_dice(self.rolls.len() as u8),
-                    fmt_dice(pool_remaining),
-                );
+            write_s!(
+                message,
+                "\n### {} → {}",
+                fmt_dice(self.rolls.len() as u8),
+                fmt_dice(pool_remaining),
+            );
 
-                if pool_remaining == 0 {
-                    write_s!(message, "\n### Pool depleted!");
-                }
+            if pool_remaining == 0 {
+                write_s!(message, " | Pool depleted!");
             }
         }
 
