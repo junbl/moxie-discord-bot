@@ -1,4 +1,4 @@
 /target
 /*/target
-Secrets.toml
+Secrets*.toml
 .env

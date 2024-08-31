@@ -135,17 +135,13 @@ pub fn replace_rolls(
 pub fn roll_replacements(
     fives_count_as_sixes: bool,
     fours_count_as_ones: bool,
-    ones_count_as_fours: bool,
 ) -> Vec<(Roll, Roll)> {
     let mut roll_replacements = vec![];
     if fives_count_as_sixes {
         roll_replacements.push((Roll::Messy(5), Roll::Perfect(5)))
     }
-    if ones_count_as_fours {
-        roll_replacements.push((Roll::Grim(1), Roll::Messy(1)))
-    }
     if fours_count_as_ones {
-        roll_replacements.push((Roll::Messy(4), Roll::Grim(1)))
+        roll_replacements.push((Roll::Messy(4), Roll::Grim(4)))
     }
     roll_replacements
 }
@@ -330,20 +326,8 @@ mod tests {
             (vec![Roll::Messy(4), Roll::Messy(5)], Roll::Perfect(5)),
         ];
         for (input, expected) in inputs {
-            let input = replace_rolls(input, &roll_replacements(true, true, false));
+            let input = replace_rolls(input, &roll_replacements(true, true));
             assert_eq!(roll_result(input, false), expected);
-        }
-    }
-    #[test]
-    fn fives_count_as_sixes_and_ones_count_as_fours() {
-        let inputs = [
-            (vec![Roll::Grim(1)], Roll::Messy(1)),
-            (vec![Roll::Grim(1), Roll::Grim(2)], Roll::Messy(1)),
-            (vec![Roll::Messy(5), Roll::Grim(1)], Roll::Perfect(5)),
-        ];
-        for (input, expected) in inputs {
-            let input = replace_rolls(input, &roll_replacements(true, false, true));
-            assert_eq!(roll_result(input, false,), expected);
         }
     }
 }

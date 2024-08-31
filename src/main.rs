@@ -28,7 +28,6 @@ async fn main(
     #[shuttle_runtime::Secrets] secret_store: SecretStore,
     #[shuttle_shared_db::Postgres] conn_str: String,
 ) -> ShuttleSerenity {
-    // Get the discord token set in `Secrets.toml`
     let discord_token = secret_store
         .get("DISCORD_TOKEN")
         .context("'DISCORD_TOKEN' was not found")?;
@@ -63,3 +62,15 @@ async fn main(
 
     Ok(client.into())
 }
+
+
+macro_rules! write_s {
+    ($s:expr, $($fmt:tt)*) => {
+        {
+            use std::fmt::Write;
+            let s: &mut String = &mut $s;
+            write!(s, $($fmt)*).unwrap();
+        }
+    };
+}
+pub(crate) use write_s;
