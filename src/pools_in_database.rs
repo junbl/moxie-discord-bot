@@ -27,6 +27,7 @@ macro_rules! match_pool_id {
         }
     };
 }
+
 macro_rules! match_scope {
     ($scope:expr, $body_fn:expr) => {
         match $scope {

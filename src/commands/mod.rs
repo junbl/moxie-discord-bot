@@ -83,8 +83,11 @@ pub async fn quickpool(
     let mut pool = Pool::new(num_dice);
     let rolls = pool.roll(&ctx.data().roll_dist);
 
-    ctx.say(crate::commands::pool::print_pool_results(&rolls, &pool, false, None))
-        .await?;
+    let message = crate::commands::roll::RollOutcomeMessageBuilder::new(&rolls)
+        .pool_remaining(pool.dice())
+        .hide_outcome(true)
+        .finish();
+    ctx.say(message).await?;
     Ok(())
 }
 
