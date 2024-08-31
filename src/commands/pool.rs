@@ -7,10 +7,10 @@ use serenity::futures::{future::Either, stream, Stream, StreamExt, TryStreamExt}
 use tracing::{info, instrument};
 
 use crate::{
-    commands::{fmt_dice, roll::get_roll_outcome_message, Scope},
+    commands::{fmt_dice, roll::RollOutcomeMessageBuilder, Scope},
     error::MoxieError,
     pools_in_database::PoolInDb,
-    rolls::{Pool, Roll, Thorn},
+    rolls::{Roll, Thorn},
     Context, Error,
 };
 
@@ -86,37 +86,6 @@ pub fn thorns_str(thorns: &[Thorn]) -> String {
     thorns.iter().copied().map(get_thorn_emoji).join(" ")
 }
 
-pub fn print_pool_results(
-    rolls: &[Roll],
-    pool: &Pool,
-    show_outcome: bool,
-    thorns: Option<Vec<Thorn>>,
-) -> String {
-    use std::fmt::Write;
-    let mut msg = String::new();
-    let remaining = pool.dice();
-    if show_outcome || thorns.is_some() {
-        let roll_outcome_message =
-            get_roll_outcome_message(rolls, thorns.unwrap_or_default(), false);
-        write!(msg, "\n{roll_outcome_message}",).unwrap();
-    } else if !rolls.is_empty() {
-        write!(msg, "\n# {}", rolls_str(rolls, false)).unwrap();
-    }
-    if !rolls.is_empty() {
-        write!(
-            msg,
-            "\n### {} → {}",
-            fmt_dice(rolls.len() as u8),
-            fmt_dice(remaining),
-        )
-        .unwrap();
-    }
-    if remaining == 0 {
-        write!(msg, "\n### Pool depleted!").unwrap();
-    }
-    msg
-}
-
 /// If the scope argument is not provided, use this to default to
 /// [`Scope::Channel`].
 fn scope_or_default(opt_scope: Option<Scope>, ctx: &Context) -> Scope {
@@ -180,20 +149,31 @@ pub async fn roll(
     #[description = "Name of the pool"]
     pool_name: String,
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
-    #[description = "Show the outcome of the roll, like for a potency pool"] show_outcome: Option<
-        bool,
-    >,
-    #[description = "Number of thorns to add to potentially cut the outcome of a pool. Implies `show_outcome`."]
+    #[description = "Show the outcome of the roll of the dice in the pool, like for a power pool"]
+    show_outcome: Option<bool>,
+    #[description = "Number of thorns to add to potentially cut the outcome of a pool. Enables show_outcome."]
     thorns: Option<u8>,
+    #[description = "Roll this pool with potency. Enables show_outcome."] potency: Option<bool>,
 ) -> Result<(), Error> {
     info!("Received command: roll");
-    let mut pool = get_pool_try_all_scopes(&ctx, &pool_name, scope).await?;
+    let pool = get_pool_try_all_scopes(&ctx, &pool_name, scope).await?;
+    let message = roll_inner(&ctx, pool_name, pool, show_outcome, thorns, potency).await?;
+    ctx.say(message).await?;
+    Ok(())
+}
+async fn roll_inner(
+    ctx: &Context<'_>,
+    pool_name: String,
+    mut pool: PoolInDb,
+    show_outcome: Option<bool>,
+    thorns: Option<u8>,
+    potency: Option<bool>,
+) -> Result<String, Error> {
     let rolls = pool
         .roll(ctx.data().pools.conn(), &ctx.data().roll_dist)
         .await?;
     let show_outcome = show_outcome.unwrap_or_default();
 
-    let formatted_num_dice = fmt_dice(rolls.len() as u8);
     let thorns = thorns.map(|thorns| {
         let mut rng = rand::thread_rng();
         ctx.data()
@@ -201,12 +181,14 @@ pub async fn roll(
             .roll_n(&mut rng, thorns as usize)
             .collect()
     });
-    let pool_result_msg = print_pool_results(&rolls, &pool.pool, show_outcome, thorns);
-    ctx.say(format!(
-        "Rolled pool `{pool_name}` with {formatted_num_dice}{pool_result_msg}",
-    ))
-    .await?;
-    Ok(())
+    let pool_result_msg = RollOutcomeMessageBuilder::new(&rolls)
+        .pool_name(pool_name)
+        .pool_remaining(pool.pool.dice())
+        .hide_outcome(!show_outcome)
+        .thorns(thorns)
+        .potency(potency.unwrap_or_default())
+        .finish();
+    Ok(pool_result_msg)
 }
 
 async fn get_pool_try_all_scopes(
@@ -338,17 +320,17 @@ pub async fn set(
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: set");
-    let (_, message) = set_inner(ctx, pool_name, num_dice, scope).await?;
+    let (_, message) = set_inner(ctx, &pool_name, num_dice, scope).await?;
     ctx.say(message).await?;
     Ok(())
 }
 pub async fn set_inner(
     ctx: Context<'_>,
-    pool_name: String,
+    pool_name: &str,
     num_dice: SetValue,
     scope: Option<Scope>,
 ) -> Result<(PoolInDb, String), Error> {
-    let mut pool = get_pool_try_all_scopes(&ctx, &pool_name, scope).await?;
+    let mut pool = get_pool_try_all_scopes(&ctx, pool_name, scope).await?;
     let starting_size = pool.pool.dice();
     let new_size = ctx.data().pools.set(&mut pool, num_dice).await?;
     let message = format!(
@@ -405,22 +387,22 @@ pub async fn droproll(
         u8,
     >,
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
+    #[description = "Show the outcome of the roll of the dice in the pool"] show_outcome: Option<
+        bool,
+    >,
+    #[description = "Number of thorns to add to potentially cut the outcome of a pool. Enables show_outcome."]
+    thorns: Option<u8>,
+    #[description = "Roll this pool with potency. Enables show_outcome."] potency: Option<bool>,
 ) -> Result<(), Error> {
-    let (mut pool, message) = set_inner(
+    let (pool, message) = set_inner(
         ctx,
-        pool_name,
+        &pool_name,
         SetValue::Subtract(num_dice_to_drop.unwrap_or(1)),
         scope,
     )
     .await?;
-    let rolls = pool
-        .roll(ctx.data().pools.conn(), &ctx.data().roll_dist)
-        .await?;
-    ctx.say(format!(
-        "{message}\n{}",
-        print_pool_results(&rolls, &pool.pool, false, None)
-    ))
-    .await?;
+    let roll_message = roll_inner(&ctx, pool_name, pool, show_outcome, thorns, potency).await?;
+    ctx.say(format!("{message}\n{roll_message}")).await?;
     Ok(())
 }
 /// The type for the `num_dice` argument of the [`set`] command.
