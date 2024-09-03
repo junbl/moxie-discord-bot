@@ -211,15 +211,14 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
             write_s!(message, "# {roll_str}");
         }
 
-        if let Some(ref thorns) = self.thorns {
+        let thorns = self.thorns.unwrap_or_default();
+        if !thorns.is_empty() {
             if !self.rolls.is_empty() {
                 write_s!(message, " • ");
             } else {
                 write_s!(message, "# ");
             }
-            if !thorns.is_empty() {
-                write_s!(message, "{}", thorns_str(thorns));
-            }
+            write_s!(message, "{}", thorns_str(&thorns));
         }
         if let Some(pool_remaining) = self.pool_remaining {
             write_s!(
@@ -236,7 +235,7 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
 
         if !self.hide_outcome {
             let roll = roll_result(self.rolls.iter().copied(), self.mastery);
-            let final_roll = self.thorns.into_iter().flatten().fold(roll, Roll::cut);
+            let final_roll = thorns.into_iter().fold(roll, Roll::cut);
             if roll != final_roll {
                 write_s!(message, "\n### `{roll}`, cut to...");
             }
