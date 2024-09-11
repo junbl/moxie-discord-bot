@@ -1,7 +1,12 @@
 use derive_setters::Setters;
 use nom::error::Error as NomError;
 use nom::Finish;
+use poise::CreateReply;
 use rand::thread_rng;
+use serenity::all::{
+    ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateButton,
+    CreateInteractionResponseMessage,
+};
 use std::fmt::Write;
 
 use crate::commands::fmt_dice;
@@ -10,6 +15,9 @@ use crate::rolls::{
     replace_rolls, roll_replacements, roll_result, Roll, RollDistribution, Thorn, ThornDistribution,
 };
 use crate::{write_s, Context, Error};
+
+use super::pool::{delete_inner, reset_inner};
+use super::Scope;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct RollExpr {
@@ -144,7 +152,7 @@ pub async fn roll(
         .potency(potency.unwrap_or_default())
         .finish();
 
-    ctx.say(message).await?;
+    ctx.send(message).await?;
 
     Ok(())
 }
@@ -179,7 +187,7 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
         let _ = self.user_id.insert(ctx.author().id);
         self
     }
-    pub fn finish(self) -> String {
+    pub fn finish(self) -> CreateReply {
         let mut message = String::new();
 
         if let Some(user_id) = self.user_id {
@@ -220,6 +228,7 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
             }
             write_s!(message, "{}", thorns_str(&thorns));
         }
+        let mut components = None;
         if let Some(pool_remaining) = self.pool_remaining {
             write_s!(
                 message,
@@ -230,6 +239,16 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
 
             if pool_remaining == 0 {
                 write_s!(message, " | Pool depleted!");
+                components
+                    .get_or_insert_with(Vec::new)
+                    .push(CreateActionRow::Buttons(vec![
+                        CreateButton::new(Button::Delete)
+                            .label(Button::Delete)
+                            .style(ButtonStyle::Danger),
+                        CreateButton::new(Button::Reset)
+                            .label(Button::Reset)
+                            .style(ButtonStyle::Primary),
+                    ]));
             }
         }
 
@@ -242,6 +261,61 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
             write_s!(message, "\n# `{final_roll}`");
         }
 
+        let mut message = CreateReply::default().content(message);
+        if let Some(components) = components {
+            message = message.components(components);
+        }
         message
     }
+}
+
+#[derive(strum::EnumString, strum::IntoStaticStr)]
+enum Button {
+    Delete,
+    Reset,
+}
+impl From<Button> for String {
+    fn from(value: Button) -> Self {
+        let value: &str = value.into();
+        value.to_string()
+    }
+}
+
+
+pub fn needs_to_handle_buttons(reply: &CreateReply) -> bool {
+    reply.components.as_ref().is_some_and(|components| !components.is_empty())
+}
+
+pub async fn handle_buttons(
+    ctx: &Context<'_>,
+    pool_name: &str,
+    scope: Option<Scope>,
+) -> Result<(), Error> {
+    ctx.defer().await?;
+    while let Some(mci) = ComponentInteractionCollector::new(ctx.serenity_context())
+        .timeout(std::time::Duration::from_secs(120))
+        .filter(|mci| mci.data.custom_id.parse::<Button>().is_ok())
+        .await
+    {
+        tracing::warn!(?mci, ctx_id=ctx.id(),"Got interaction");
+        let pool_name = pool_name.to_string();
+        let message = match mci
+            .data
+            .custom_id
+            .parse::<Button>()
+            .expect("Custom ID should always be constructed from enum")
+        {
+            Button::Delete => delete_inner(ctx, pool_name, scope).await,
+            Button::Reset => reset_inner(ctx, pool_name, scope).await,
+        }?;
+        // mci.create_response(ctx, serenity::all::CreateInteractionResponse::Acknowledge)
+        mci.create_response(
+            ctx,
+            serenity::all::CreateInteractionResponse::Message(
+                CreateInteractionResponseMessage::new().content(message),
+            ),
+        )
+        .await?;
+    }
+    Ok(())
 }

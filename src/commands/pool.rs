@@ -3,11 +3,16 @@
 use std::{borrow::Cow, future::ready};
 
 use itertools::Itertools;
+use poise::CreateReply;
 use serenity::futures::{future::Either, stream, Stream, StreamExt, TryStreamExt};
 use tracing::{info, instrument};
 
 use crate::{
-    commands::{fmt_dice, roll::RollOutcomeMessageBuilder, Scope},
+    commands::{
+        fmt_dice,
+        roll::{handle_buttons, RollOutcomeMessageBuilder},
+        Scope,
+    },
     error::MoxieError,
     pools_in_database::PoolInDb,
     rolls::{Roll, Thorn},
@@ -157,8 +162,8 @@ pub async fn roll(
 ) -> Result<(), Error> {
     info!("Received command: roll");
     let pool = get_pool_try_all_scopes(&ctx, &pool_name, scope).await?;
-    let message = roll_inner(&ctx, pool_name, pool, show_outcome, thorns, potency).await?;
-    ctx.say(message).await?;
+    let message = roll_inner(&ctx, pool_name.clone(), pool, show_outcome, thorns, potency).await?;
+    send_pool_roll_message(&ctx, message, &pool_name, scope).await?;
     Ok(())
 }
 async fn roll_inner(
@@ -168,7 +173,7 @@ async fn roll_inner(
     show_outcome: Option<bool>,
     thorns: Option<u8>,
     potency: Option<bool>,
-) -> Result<String, Error> {
+) -> Result<CreateReply, Error> {
     let rolls = pool
         .roll(ctx.data().pools.conn(), &ctx.data().roll_dist)
         .await?;
@@ -192,6 +197,24 @@ async fn roll_inner(
     Ok(pool_result_msg)
 }
 
+/// Sends the given message, handling any interactions if necessary.
+pub async fn send_pool_roll_message(
+    ctx: &Context<'_>,
+    message: CreateReply,
+    pool_name: &str,
+    scope: Option<Scope>,
+) -> Result<(), Error> {
+    let needs_to_handle_buttons = super::roll::needs_to_handle_buttons(&message);
+    ctx.send(message).await?;
+    if needs_to_handle_buttons {
+        // let pool_name = pool_name.to_string();
+        // tokio::spawn(async move { handle_buttons(&ctx, &pool_name, scope).await });
+        handle_buttons(ctx, pool_name, scope).await
+    } else {
+        Ok(())
+    }
+}
+
 async fn get_pool_try_all_scopes(
     ctx: &Context<'_>,
     pool_name: &str,
@@ -205,7 +228,7 @@ async fn get_pool_try_all_scopes(
             .chain(ctx.guild_id().map(Scope::Server))
             .collect()
     };
-    let mut pool = Err(MoxieError::PoolNotFound);
+    let mut pool = Err(MoxieError::PoolNotFound(pool_name.to_string()));
     for scope in scopes_to_check {
         if let Ok(p) = ctx.data().pools.get(scope, pool_name).await {
             pool = Ok(p);
@@ -225,17 +248,23 @@ pub async fn reset(
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: reset");
+    ctx.say(reset_inner(&ctx, pool_name, scope).await?).await?;
+    Ok(())
+}
+pub async fn reset_inner(
+    ctx: &Context<'_>,
+    pool_name: String,
+    scope: Option<Scope>,
+) -> Result<String, Error> {
     let num_dice = ctx
         .data()
         .pools
-        .reset(scope_or_default(scope, &ctx), &pool_name)
+        .reset(scope_or_default(scope, ctx), &pool_name)
         .await?;
-    ctx.say(format!(
+    Ok(format!(
         "Reset pool `{pool_name}` back to {}!",
         fmt_dice(num_dice)
     ))
-    .await?;
-    Ok(())
 }
 /// Deletes a pool.
 #[poise::command(prefix_command, slash_command)]
@@ -248,18 +277,23 @@ pub async fn delete(
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: delete");
+    ctx.say(delete_inner(&ctx, pool_name, scope).await?).await?;
+    Ok(())
+}
+pub async fn delete_inner(
+    ctx: &Context<'_>,
+    pool_name: String,
+    scope: Option<Scope>,
+) -> Result<String, Error> {
     let deleted_pool = ctx
         .data()
         .pools
-        .delete(scope_or_default(scope, &ctx), &pool_name)
+        .delete(scope_or_default(scope, ctx), &pool_name)
         .await?;
-
-    ctx.say(format!(
+    Ok(format!(
         "Deleted pool `{pool_name}` (had {} left)",
         fmt_dice(deleted_pool.dice()),
     ))
-    .await?;
-    Ok(())
 }
 
 /// See the available pools for this channel or server.
@@ -402,8 +436,14 @@ pub async fn droproll(
         scope,
     )
     .await?;
-    let roll_message = roll_inner(&ctx, pool_name, pool, show_outcome, thorns, potency).await?;
-    ctx.say(format!("{message}\n{roll_message}")).await?;
+    let roll_message =
+        roll_inner(&ctx, pool_name.clone(), pool, show_outcome, thorns, potency).await?;
+    let message = format!(
+        "{message}\n{}",
+        roll_message.content.as_deref().unwrap_or_default()
+    );
+    let message = roll_message.content(message);
+    send_pool_roll_message(&ctx, message, &pool_name, scope).await?;
     Ok(())
 }
 /// The type for the `num_dice` argument of the [`set`] command.

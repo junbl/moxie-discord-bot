@@ -149,7 +149,7 @@ impl Pools {
                 .filter(Column::Name.like(pool_name))
                 .one(conn)
                 .await?
-                .ok_or(MoxieError::PoolNotFound)?;
+                .ok_or_else(|| MoxieError::PoolNotFound(pool_name.to_string()))?;
             Ok(PoolInDb::from(pool))
         })
     }

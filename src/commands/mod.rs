@@ -87,7 +87,7 @@ pub async fn quickpool(
         .pool_remaining(pool.dice())
         .hide_outcome(true)
         .finish();
-    ctx.say(message).await?;
+    ctx.send(message).await?;
     Ok(())
 }
 
