@@ -3,14 +3,19 @@
 use std::{borrow::Cow, future::ready};
 
 use itertools::Itertools;
+use poise::CreateReply;
 use serenity::futures::{future::Either, stream, Stream, StreamExt, TryStreamExt};
 use tracing::{info, instrument};
 
 use crate::{
-    commands::{fmt_dice, roll::RollOutcomeMessageBuilder, Scope},
+    commands::{
+        fmt_dice,
+        roll::{handle_buttons, RollOutcomeMessageBuilder},
+        Scope,
+    },
     error::MoxieError,
     pools_in_database::PoolInDb,
-    rolls::{Roll, Thorn},
+    rolls::{Pool, Roll, Thorn},
     Context, Error,
 };
 
@@ -157,18 +162,17 @@ pub async fn roll(
 ) -> Result<(), Error> {
     info!("Received command: roll");
     let pool = get_pool_try_all_scopes(&ctx, &pool_name, scope).await?;
-    let message = roll_inner(&ctx, pool_name, pool, show_outcome, thorns, potency).await?;
-    ctx.say(message).await?;
+    let message = roll_inner(&ctx, pool.clone(), show_outcome, thorns, potency).await?;
+    send_pool_roll_message(&ctx, message, pool).await?;
     Ok(())
 }
 async fn roll_inner(
     ctx: &Context<'_>,
-    pool_name: String,
     mut pool: PoolInDb,
     show_outcome: Option<bool>,
     thorns: Option<u8>,
     potency: Option<bool>,
-) -> Result<String, Error> {
+) -> Result<CreateReply, Error> {
     let rolls = pool
         .roll(ctx.data().pools.conn(), &ctx.data().roll_dist)
         .await?;
@@ -183,13 +187,27 @@ async fn roll_inner(
     });
     let pool_result_msg = RollOutcomeMessageBuilder::new(&rolls)
         .username(ctx)
-        .pool_name(pool_name)
-        .pool_remaining(pool.pool.dice())
+        .pool(pool)
         .hide_outcome(!show_outcome)
         .thorns(thorns)
         .potency(potency.unwrap_or_default())
         .finish();
     Ok(pool_result_msg)
+}
+
+/// Sends the given message, handling any interactions if necessary.
+pub async fn send_pool_roll_message(
+    ctx: &Context<'_>,
+    message: CreateReply,
+    pool: PoolInDb,
+) -> Result<(), Error> {
+    let needs_to_handle_buttons = super::roll::needs_to_handle_buttons(&message);
+    ctx.send(message).await?;
+    if needs_to_handle_buttons {
+        handle_buttons(ctx, pool).await
+    } else {
+        Ok(())
+    }
 }
 
 async fn get_pool_try_all_scopes(
@@ -205,7 +223,7 @@ async fn get_pool_try_all_scopes(
             .chain(ctx.guild_id().map(Scope::Server))
             .collect()
     };
-    let mut pool = Err(MoxieError::PoolNotFound);
+    let mut pool = Err(MoxieError::PoolNotFound(pool_name.to_string()));
     for scope in scopes_to_check {
         if let Ok(p) = ctx.data().pools.get(scope, pool_name).await {
             pool = Ok(p);
@@ -230,12 +248,11 @@ pub async fn reset(
         .pools
         .reset(scope_or_default(scope, &ctx), &pool_name)
         .await?;
-    ctx.say(format!(
-        "Reset pool `{pool_name}` back to {}!",
-        fmt_dice(num_dice)
-    ))
-    .await?;
+    ctx.say(reset_message(&pool_name, num_dice)).await?;
     Ok(())
+}
+pub fn reset_message(pool_name: &str, num_dice: u8) -> String {
+    format!("Reset pool `{pool_name}` back to {}!", fmt_dice(num_dice))
 }
 /// Deletes a pool.
 #[poise::command(prefix_command, slash_command)]
@@ -253,13 +270,14 @@ pub async fn delete(
         .pools
         .delete(scope_or_default(scope, &ctx), &pool_name)
         .await?;
-
-    ctx.say(format!(
+    ctx.say(delete_message(&pool_name, deleted_pool)).await?;
+    Ok(())
+}
+pub fn delete_message(pool_name: &str, deleted_pool: Pool) -> String {
+    format!(
         "Deleted pool `{pool_name}` (had {} left)",
         fmt_dice(deleted_pool.dice()),
-    ))
-    .await?;
-    Ok(())
+    )
 }
 
 /// See the available pools for this channel or server.
@@ -402,8 +420,13 @@ pub async fn droproll(
         scope,
     )
     .await?;
-    let roll_message = roll_inner(&ctx, pool_name, pool, show_outcome, thorns, potency).await?;
-    ctx.say(format!("{message}\n{roll_message}")).await?;
+    let roll_message = roll_inner(&ctx, pool.clone(), show_outcome, thorns, potency).await?;
+    let message = format!(
+        "{message}\n{}",
+        roll_message.content.as_deref().unwrap_or_default()
+    );
+    let message = roll_message.content(message);
+    send_pool_roll_message(&ctx, message, pool).await?;
     Ok(())
 }
 /// The type for the `num_dice` argument of the [`set`] command.

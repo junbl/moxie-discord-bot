@@ -214,7 +214,7 @@ impl Distribution<Thorn> for ThornDistribution {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct Pool {
     dice: u8,
 }
