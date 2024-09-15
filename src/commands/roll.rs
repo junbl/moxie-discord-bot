@@ -355,7 +355,7 @@ pub async fn handle_buttons(ctx: &Context<'_>, pool: PoolInDb) -> Result<(), Err
         })
         .await
     {
-        tracing::warn!(?mci, ctx_id = ctx.id(), "Got interaction");
+        tracing::debug!(?mci, ctx_id = ctx.id(), "Got interaction");
         let pools = &ctx.data().pools;
 
         let message = match mci
