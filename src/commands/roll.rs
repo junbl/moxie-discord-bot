@@ -8,16 +8,17 @@ use serenity::all::{
     CreateInteractionResponseMessage,
 };
 use std::fmt::Write;
+use strum::{EnumString, IntoStaticStr};
 
 use crate::commands::fmt_dice;
 use crate::commands::pool::{rolls_str, thorns_str};
+use crate::pools_in_database::{PoolId, PoolInDb};
 use crate::rolls::{
     replace_rolls, roll_replacements, roll_result, Roll, RollDistribution, Thorn, ThornDistribution,
 };
 use crate::{write_s, Context, Error};
 
-use super::pool::{delete_inner, reset_inner};
-use super::Scope;
+use super::pool::{delete_message, reset_message};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct RollExpr {
@@ -173,6 +174,8 @@ pub struct RollOutcomeMessageBuilder<'a> {
     pool_name: Option<String>,
     #[setters(into)]
     pool_remaining: Option<u8>,
+    #[setters(into)]
+    pool_buttons: Option<PoolId>,
     potency: bool,
     hide_outcome: bool,
 }
@@ -182,6 +185,11 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
             rolls,
             ..Default::default()
         }
+    }
+    pub fn pool(self, pool: PoolInDb) -> Self {
+        self.pool_remaining(pool.pool.dice())
+            .pool_name(pool.name)
+            .pool_buttons(pool.id)
     }
     pub fn username(mut self, ctx: &'a Context<'_>) -> Self {
         let _ = self.user_id.insert(ctx.author().id);
@@ -237,18 +245,26 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
                 fmt_dice(pool_remaining),
             );
 
-            if pool_remaining == 0 {
-                write_s!(message, " | Pool depleted!");
-                components
-                    .get_or_insert_with(Vec::new)
-                    .push(CreateActionRow::Buttons(vec![
-                        CreateButton::new(Button::Delete)
-                            .label(Button::Delete)
+            if let Some(pool) = self.pool_buttons {
+                if pool_remaining == 0 {
+                    write_s!(message, " | Pool depleted!");
+                    components
+                        .get_or_insert_with(Vec::new)
+                        .push(CreateActionRow::Buttons(vec![
+                            CreateButton::new(PoolButtonInteraction::new(
+                                ButtonAction::Delete,
+                                pool,
+                            ))
+                            .label(ButtonAction::Delete)
                             .style(ButtonStyle::Danger),
-                        CreateButton::new(Button::Reset)
-                            .label(Button::Reset)
+                            CreateButton::new(PoolButtonInteraction::new(
+                                ButtonAction::Reset,
+                                pool,
+                            ))
+                            .label(ButtonAction::Reset)
                             .style(ButtonStyle::Primary),
-                    ]));
+                        ]));
+                }
             }
         }
 
@@ -269,45 +285,95 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
     }
 }
 
-#[derive(strum::EnumString, strum::IntoStaticStr)]
-enum Button {
+struct PoolButtonInteraction {
+    action: ButtonAction,
+    pool_id: PoolId,
+}
+impl PoolButtonInteraction {
+    pub fn new(action: ButtonAction, pool: PoolId) -> Self {
+        Self {
+            action,
+            pool_id: pool,
+        }
+    }
+}
+impl std::str::FromStr for PoolButtonInteraction {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (action, pool_id) = s
+            .split_once('/')
+            .ok_or_else(|| format!("Failed to parse input (no `/`): {s}"))?;
+        let action = action.parse()?;
+        let pool_id = pool_id.parse()?;
+
+        Ok(Self { action, pool_id })
+    }
+}
+impl std::fmt::Display for PoolButtonInteraction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let action: &str = (&self.action).into();
+        let id = &self.pool_id;
+        write!(f, "{action}/{id}")
+    }
+}
+impl From<PoolButtonInteraction> for String {
+    fn from(pbi: PoolButtonInteraction) -> Self {
+        pbi.to_string()
+    }
+}
+#[derive(Debug, EnumString, IntoStaticStr)]
+enum ButtonAction {
+    #[strum(serialize = "d")]
     Delete,
+    #[strum(serialize = "r")]
     Reset,
 }
-impl From<Button> for String {
-    fn from(value: Button) -> Self {
-        let value: &str = value.into();
-        value.to_string()
+impl From<ButtonAction> for String {
+    fn from(value: ButtonAction) -> Self {
+        format!("{value:?}")
     }
 }
 
-
 pub fn needs_to_handle_buttons(reply: &CreateReply) -> bool {
-    reply.components.as_ref().is_some_and(|components| !components.is_empty())
+    reply
+        .components
+        .as_ref()
+        .is_some_and(|components| !components.is_empty())
 }
 
-pub async fn handle_buttons(
-    ctx: &Context<'_>,
-    pool_name: &str,
-    scope: Option<Scope>,
-) -> Result<(), Error> {
+pub async fn handle_buttons(ctx: &Context<'_>, pool: PoolInDb) -> Result<(), Error> {
     ctx.defer().await?;
+    let pool_id = pool.id;
     while let Some(mci) = ComponentInteractionCollector::new(ctx.serenity_context())
         .timeout(std::time::Duration::from_secs(120))
-        .filter(|mci| mci.data.custom_id.parse::<Button>().is_ok())
+        .filter(move |mci| {
+            mci.data
+                .custom_id
+                .parse::<PoolButtonInteraction>()
+                .is_ok_and(|pbi| pbi.pool_id == pool_id)
+        })
         .await
     {
-        tracing::warn!(?mci, ctx_id=ctx.id(),"Got interaction");
-        let pool_name = pool_name.to_string();
+        tracing::warn!(?mci, ctx_id = ctx.id(), "Got interaction");
+        let pools = &ctx.data().pools;
+
         let message = match mci
             .data
             .custom_id
-            .parse::<Button>()
-            .expect("Custom ID should always be constructed from enum")
+            .parse::<PoolButtonInteraction>()
+            .expect("Custom ID parsed in filter")
+            .action
         {
-            Button::Delete => delete_inner(ctx, pool_name, scope).await,
-            Button::Reset => reset_inner(ctx, pool_name, scope).await,
-        }?;
+            ButtonAction::Delete => {
+                let deleted_pool = pool.delete(pools).await?;
+                delete_message(&pool.name, deleted_pool)
+            }
+            ButtonAction::Reset => {
+                let num_dice = pool.reset(pools).await?;
+                reset_message(&pool.name, num_dice)
+            }
+        };
         // mci.create_response(ctx, serenity::all::CreateInteractionResponse::Acknowledge)
         mci.create_response(
             ctx,
