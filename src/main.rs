@@ -63,7 +63,6 @@ async fn main(
     Ok(client.into())
 }
 
-
 macro_rules! write_s {
     ($s:expr, $($fmt:tt)*) => {
         {
