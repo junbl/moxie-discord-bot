@@ -394,7 +394,7 @@ async fn check_inner(
     Ok(())
 }
 
-/// Checks the current number of dice in a pool without rolling it.
+/// Drops one or more dice from the pool, then rolls it.
 #[poise::command(prefix_command, slash_command)]
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn droproll(
