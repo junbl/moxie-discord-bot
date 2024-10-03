@@ -63,20 +63,23 @@ impl std::fmt::Display for RollExpr {
 mod parse {
     use super::RollExpr;
     use nom::bytes::complete::tag;
-    use nom::character::complete::u8;
+    use nom::character::complete::{multispace0, u8};
     use nom::combinator::{all_consuming, opt};
-    use nom::sequence::{terminated, tuple};
+    use nom::sequence::{delimited, terminated, tuple};
     use nom::IResult;
 
     pub fn parse_roll_expression(roll_expr: &str) -> IResult<&str, RollExpr> {
         let (remaining, (dice, thorns)) = all_consuming(tuple((
-            terminated(u8, tag("d")),
+            terminated(
+                opt(terminated(u8, tag("d"))),
+                delimited(multispace0, opt(tag("+")), multispace0),
+            ),
             opt(terminated(u8, tag("t"))),
         )))(roll_expr)?;
         Ok((
             remaining,
             RollExpr {
-                dice,
+                dice: dice.unwrap_or_default(),
                 thorns: thorns.unwrap_or_default(),
             },
         ))
@@ -90,6 +93,11 @@ mod parse {
             let good = [
                 ("1d", RollExpr { dice: 1, thorns: 0 }),
                 ("1d2t", RollExpr { dice: 1, thorns: 2 }),
+                ("1d 2t", RollExpr { dice: 1, thorns: 2 }),
+                ("1d    \n\t   2t", RollExpr { dice: 1, thorns: 2 }),
+                ("1d+2t", RollExpr { dice: 1, thorns: 2 }),
+                ("1d + 2t", RollExpr { dice: 1, thorns: 2 }),
+                ("2t", RollExpr { dice: 0, thorns: 2 }),
                 (
                     "100d255t",
                     RollExpr {
@@ -98,11 +106,21 @@ mod parse {
                     },
                 ),
                 ("0d0t", RollExpr { dice: 0, thorns: 0 }),
+                ("", RollExpr { dice: 0, thorns: 0 }),
             ];
             for (input, expected) in good {
                 assert_eq!(input.parse::<RollExpr>().unwrap(), expected);
             }
-            let bad = ["1000000000d", "1d10000000000000t", "-1d", "1.5d", "1d5.6"];
+            let bad = [
+                "1000000000d",
+                "1d10000000000000t",
+                "-1d",
+                "1.5d",
+                "1d5.6",
+                "1t2d",
+                "1d beans 2t",
+                "1d-2t",
+            ];
             for input in bad {
                 let res = input.parse::<RollExpr>();
                 assert!(res.is_err(), "{input}: {res:?}");
@@ -211,7 +229,7 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
                 dice: self.rolls.len() as u8,
                 thorns: self.thorns.as_ref().map(Vec::len).unwrap_or_default() as u8,
             };
-            write_s!(message, " {roll_expr}");
+            write_s!(message, " `{roll_expr}`");
         }
 
         if let Some(ref roll_name) = self.roll_name {
