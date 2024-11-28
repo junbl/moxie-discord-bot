@@ -9,8 +9,7 @@ use tracing::{info, instrument};
 
 use crate::{
     commands::{
-        fmt_dice,
-        roll::{handle_buttons, RollOutcomeMessageBuilder},
+        roll::{handle_buttons, Dice, RollOutcomeMessageBuilder, Thorns},
         Scope,
     },
     error::MoxieError,
@@ -131,12 +130,12 @@ pub async fn pool(_: Context<'_>) -> Result<(), Error> {
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn new(
     ctx: Context<'_>,
-    #[description = "Number of dice to put in the pool"] num_dice: u8,
+    #[description = "Number of dice to put in the pool"] num_dice: Dice,
     #[description = "Name of the pool"] name: String,
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
     info!("Received command: new");
-    let message = format!("Created new pool `{name}` with {}!", fmt_dice(num_dice));
+    let message = format!("Created new pool `{name}` with {num_dice}!");
     ctx.data()
         .pools
         .create(scope_or_default(scope, &ctx), name, num_dice)
@@ -157,7 +156,7 @@ pub async fn roll(
     #[description = "Show the outcome of the roll of the dice in the pool, like for a power pool"]
     show_outcome: Option<bool>,
     #[description = "Number of thorns to add to potentially cut the outcome of a pool. Enables show_outcome."]
-    thorns: Option<u8>,
+    thorns: Option<Thorns>,
     #[description = "Roll this pool with potency. Enables show_outcome."] potency: Option<bool>,
 ) -> Result<(), Error> {
     info!("Received command: roll");
@@ -170,7 +169,7 @@ async fn roll_inner(
     ctx: &Context<'_>,
     mut pool: PoolInDb,
     show_outcome: Option<bool>,
-    thorns: Option<u8>,
+    thorns: Option<Thorns>,
     potency: Option<bool>,
 ) -> Result<CreateReply, Error> {
     let rolls = pool
@@ -182,7 +181,7 @@ async fn roll_inner(
         let mut rng = rand::thread_rng();
         ctx.data()
             .thorn_dist
-            .roll_n(&mut rng, thorns as usize)
+            .roll_n(&mut rng, thorns)
             .collect()
     });
     let pool_result_msg = RollOutcomeMessageBuilder::new(&rolls)
@@ -251,8 +250,8 @@ pub async fn reset(
     ctx.say(reset_message(&pool_name, num_dice)).await?;
     Ok(())
 }
-pub fn reset_message(pool_name: &str, num_dice: u8) -> String {
-    format!("Reset pool `{pool_name}` back to {}!", fmt_dice(num_dice))
+pub fn reset_message(pool_name: &str, num_dice: Dice) -> String {
+    format!("Reset pool `{pool_name}` back to {num_dice}!",)
 }
 /// Deletes a pool.
 #[poise::command(prefix_command, slash_command)]
@@ -276,7 +275,7 @@ pub async fn delete(
 pub fn delete_message(pool_name: &str, deleted_pool: Pool) -> String {
     format!(
         "Deleted pool `{pool_name}` (had {} left)",
-        fmt_dice(deleted_pool.dice()),
+        deleted_pool.dice(),
     )
 }
 
@@ -352,11 +351,7 @@ pub async fn set_inner(
     let mut pool = get_pool_try_all_scopes(&ctx, pool_name, scope).await?;
     let starting_size = pool.pool.dice();
     let new_size = ctx.data().pools.set(&mut pool, num_dice).await?;
-    let message = format!(
-        "Set pool `{pool_name}` {} → {}!",
-        fmt_dice(starting_size),
-        fmt_dice(new_size)
-    );
+    let message = format!("Set pool `{pool_name}` {starting_size} → {new_size}!",);
     Ok((pool, message))
 }
 
@@ -385,10 +380,9 @@ async fn check_inner(
         .get(scope_or_default(scope, &ctx), &pool_name)
         .await?;
     ctx.say(format!(
-        "Pool `{}` currently has `{}`/{} remaining!",
-        pool_name,
+        "Pool `{pool_name}` currently has `{}`/{} remaining!",
         pool.pool.dice(),
-        fmt_dice(pool.original_size()),
+        pool.original_size(),
     ))
     .await?;
     Ok(())
@@ -403,20 +397,20 @@ pub async fn droproll(
     #[description = "Name of the pool"]
     pool_name: String,
     #[description = "Number of dice to drop before rolling - default 1"] num_dice_to_drop: Option<
-        u8,
+        Dice,
     >,
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
     #[description = "Show the outcome of the roll of the dice in the pool"] show_outcome: Option<
         bool,
     >,
     #[description = "Number of thorns to add to potentially cut the outcome of a pool. Enables show_outcome."]
-    thorns: Option<u8>,
+    thorns: Option<Thorns>,
     #[description = "Roll this pool with potency. Enables show_outcome."] potency: Option<bool>,
 ) -> Result<(), Error> {
     let (pool, message) = set_inner(
         ctx,
         &pool_name,
-        SetValue::Subtract(num_dice_to_drop.unwrap_or(1)),
+        SetValue::Subtract(num_dice_to_drop.unwrap_or(Dice::from(1))),
         scope,
     )
     .await?;
@@ -432,12 +426,12 @@ pub async fn droproll(
 /// The type for the `num_dice` argument of the [`set`] command.
 #[derive(Debug, PartialEq)]
 pub enum SetValue {
-    Add(u8),
-    Subtract(u8),
-    Set(u8),
+    Add(Dice),
+    Subtract(Dice),
+    Set(Dice),
 }
 impl std::str::FromStr for SetValue {
-    type Err = std::num::ParseIntError;
+    type Err = <Dice as std::str::FromStr>::Err;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (variant, value): (fn(_) -> _, _) = if let Some(add) = s.strip_prefix('+') {
@@ -447,25 +441,31 @@ impl std::str::FromStr for SetValue {
         } else {
             (Self::Set, s)
         };
-        let value = value.parse::<u8>()?;
+        let value = value.parse::<Dice>()?;
         Ok(variant(value))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::commands::roll::Dice;
+
     use super::SetValue;
 
     #[test]
     fn set_value() {
         let good = [
-            ("1", SetValue::Set(1)),
-            ("+2", SetValue::Add(2)),
-            ("-3", SetValue::Subtract(3)),
-            ("+0", SetValue::Add(0)),
-            ("-004", SetValue::Subtract(4)),
-            ("++1", SetValue::Add(1)),
-            ("-+1", SetValue::Subtract(1)),
+            ("1", SetValue::Set(Dice::from(1))),
+            ("1d", SetValue::Set(Dice::from(1))),
+            ("+2", SetValue::Add(Dice::from(2))),
+            ("+2d", SetValue::Add(Dice::from(2))),
+            ("-3", SetValue::Subtract(Dice::from(3))),
+            ("-3  d", SetValue::Subtract(Dice::from(3))),
+            ("+0", SetValue::Add(Dice::from(0))),
+            ("-004", SetValue::Subtract(Dice::from(4))),
+            ("++1", SetValue::Add(Dice::from(1))),
+            ("++1d", SetValue::Add(Dice::from(1))),
+            ("-+1", SetValue::Subtract(Dice::from(1))),
         ];
         for (val, expected) in good {
             assert_eq!(val.parse::<SetValue>().unwrap(), expected);

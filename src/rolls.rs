@@ -5,6 +5,8 @@ use rand::{thread_rng, Rng};
 use rand_distr::{Distribution, Uniform};
 use serde::{Deserialize, Serialize};
 
+use crate::commands::roll::{Dice, Thorns};
+
 /// The possible results of a roll in the Moxie system.
 ///
 /// Wraps the actual roll value.
@@ -157,9 +159,9 @@ impl RollDistribution {
     pub fn roll_n<'a, R: Rng + ?Sized>(
         &'a self,
         rng: &'a mut R,
-        num_dice: usize,
+        num_dice: Dice,
     ) -> impl Iterator<Item = Roll> + 'a {
-        self.sample_iter(rng).take(num_dice)
+        self.sample_iter(rng).take(num_dice.dice as usize)
     }
 }
 impl Distribution<Roll> for RollDistribution {
@@ -198,9 +200,9 @@ impl ThornDistribution {
     pub fn roll_n<'a, R: Rng + ?Sized>(
         &'a self,
         rng: &'a mut R,
-        num_dice: usize,
+        num_thorns: Thorns,
     ) -> impl Iterator<Item = Thorn> + 'a {
-        self.sample_iter(rng).take(num_dice)
+        self.sample_iter(rng).take(num_thorns.thorns as usize)
     }
 }
 impl Distribution<Thorn> for ThornDistribution {
@@ -216,16 +218,16 @@ impl Distribution<Thorn> for ThornDistribution {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct Pool {
-    dice: u8,
+    dice: Dice,
 }
 impl Pool {
-    pub fn new(dice: u8) -> Self {
+    pub fn new(dice: Dice) -> Self {
         Self { dice }
     }
-    pub fn dice(&self) -> u8 {
+    pub fn dice(&self) -> Dice {
         self.dice
     }
-    pub fn set_dice(&mut self, new_dice: u8) {
+    pub fn set_dice(&mut self, new_dice: Dice) {
         self.dice = new_dice;
     }
     pub fn roll(&mut self, rolls: &RollDistribution) -> Vec<Roll> {
@@ -238,7 +240,7 @@ impl Pool {
         rolls: &RollDistribution,
     ) -> Vec<Roll> {
         let rolls: Vec<_> = rolls
-            .roll_n(rng, self.dice as usize)
+            .roll_n(rng, self.dice)
             .inspect(|roll| {
                 if roll.is_grim() {
                     self.dice -= 1;

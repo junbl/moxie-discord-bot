@@ -1,6 +1,7 @@
 //! This module contains each of the commands that the bot supports.
 use std::future::ready;
 
+use roll::Dice;
 use serenity::{
     all::{ArgumentConvert, CacheHttp, ChannelId, GuildId},
     FutureExt,
@@ -56,16 +57,6 @@ impl ArgumentConvert for Scope {
     }
 }
 
-/// Displays the number of dice.
-/// ```
-/// assert_eq!(fmt_dice(0), "`0d`");
-/// assert_eq!(fmt_dice(1), "`1d`");
-/// assert_eq!(fmt_dice(2), "`2d`");
-/// ```
-pub fn fmt_dice(num_dice: u8) -> String {
-    format!("`{num_dice}d`")
-}
-
 /// Health check
 #[poise::command(slash_command)]
 pub async fn hello(ctx: Context<'_>) -> Result<(), Error> {
@@ -78,7 +69,7 @@ pub async fn hello(ctx: Context<'_>) -> Result<(), Error> {
 #[poise::command(slash_command)]
 pub async fn quickpool(
     ctx: Context<'_>,
-    #[description = "Number of dice in the pool"] num_dice: u8,
+    #[description = "Number of dice in the pool"] num_dice: Dice,
 ) -> Result<(), Error> {
     let mut pool = Pool::new(num_dice);
     let rolls = pool.roll(&ctx.data().roll_dist);
