@@ -11,6 +11,7 @@ use thiserror::Error;
 use crate::{rolls::Pool, Context, Error};
 pub mod pool;
 pub mod roll;
+pub mod suspense;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Scope {

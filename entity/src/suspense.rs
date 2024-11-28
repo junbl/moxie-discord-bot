@@ -9,6 +9,7 @@ pub struct Model {
     pub id: i32,
     pub channel_id: i64,
     pub suspense: i16,
+    pub challenge: Option<String>,
     pub created: DateTimeUtc,
     pub updated: DateTimeUtc,
 }

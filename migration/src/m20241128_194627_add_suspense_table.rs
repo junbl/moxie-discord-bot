@@ -23,6 +23,7 @@ impl MigrationTrait for Migration {
                             .big_unsigned()
                             .not_null(),
                     )
+                    .col(ColumnDef::new(Suspense::Challenge).string())
                     .col(
                         ColumnDef::new(Suspense::Suspense)
                             .small_unsigned()
@@ -48,6 +49,7 @@ impl MigrationTrait for Migration {
                 Index::create()
                     .table(Suspense::Table)
                     .unique()
+                    .col(Suspense::Challenge)
                     .col(Suspense::ChannelId)
                     .take(),
             )
@@ -63,7 +65,6 @@ impl MigrationTrait for Migration {
     }
 }
 
-
 #[derive(DeriveIden)]
 #[expect(clippy::enum_variant_names, reason = "so true fr fr")]
 enum Suspense {
@@ -71,6 +72,7 @@ enum Suspense {
     Id,
     ChannelId,
     Suspense,
+    Challenge,
     Created,
     Updated,
 }
