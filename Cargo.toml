@@ -37,7 +37,7 @@ derive_setters = "0.1.6"
 
 sea-orm = { version = "1", default-features = false, features = [
     "sqlx-postgres",
-    "runtime-tokio",
+    "runtime-tokio-rustls",
     "macros",
     "with-chrono",
 ] }

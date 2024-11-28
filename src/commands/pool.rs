@@ -351,7 +351,7 @@ pub async fn set_inner(
     let mut pool = get_pool_try_all_scopes(&ctx, pool_name, scope).await?;
     let starting_size = pool.pool.dice();
     let new_size = ctx.data().pools.set(&mut pool, num_dice).await?;
-    let message = format!("Set pool `{pool_name}` {starting_size} → {new_size}!",);
+    let message = format!("Set pool `{pool_name}` `{starting_size}` → `{new_size}`!",);
     Ok((pool, message))
 }
 
