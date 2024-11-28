@@ -312,7 +312,7 @@ pub async fn list(
         .into_iter()
         .map(|pool| {
             format!(
-                "{:width$}{}/{}d",
+                "{:width$}{}/{}",
                 pool.name(),
                 pool.pool.dice(),
                 pool.original_size()

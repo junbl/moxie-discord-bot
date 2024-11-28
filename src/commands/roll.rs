@@ -133,7 +133,7 @@ pub struct Thorns {
 }
 impl Thorns {
     fn is_empty(&self) -> bool {
-        self.thorns > 0
+        self.thorns == 0
     }
 }
 impl From<u8> for Thorns {
