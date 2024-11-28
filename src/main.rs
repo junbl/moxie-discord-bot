@@ -1,4 +1,5 @@
 use anyhow::Context as _;
+use commands::suspense::suspense;
 use poise::serenity_prelude::{ClientBuilder, GatewayIntents};
 use shuttle_runtime::SecretStore;
 use shuttle_serenity::ShuttleSerenity;
@@ -37,7 +38,14 @@ async fn main(
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![pool(), quickpool(), help(), roll(), scenebreak()],
+            commands: vec![
+                pool(),
+                suspense(),
+                quickpool(),
+                help(),
+                roll(),
+                scenebreak(),
+            ],
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
