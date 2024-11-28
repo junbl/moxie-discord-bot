@@ -160,14 +160,14 @@ pub async fn roll(
     #[description = "Roll this pool with potency. Enables show_outcome."] potency: Option<bool>,
 ) -> Result<(), Error> {
     info!("Received command: roll");
-    let pool = get_pool_try_all_scopes(&ctx, &pool_name, scope).await?;
-    let message = roll_inner(&ctx, pool.clone(), show_outcome, thorns, potency).await?;
-    send_pool_roll_message(&ctx, message, pool).await?;
+    let mut pool = get_pool_try_all_scopes(&ctx, &pool_name, scope).await?;
+    let message = roll_inner(&ctx, &mut pool, show_outcome, thorns, potency).await?;
+    send_pool_roll_message(&ctx, message, &pool).await?;
     Ok(())
 }
 async fn roll_inner(
     ctx: &Context<'_>,
-    mut pool: PoolInDb,
+    pool: &mut PoolInDb,
     show_outcome: Option<bool>,
     thorns: Option<Thorns>,
     potency: Option<bool>,
@@ -198,7 +198,7 @@ async fn roll_inner(
 pub async fn send_pool_roll_message(
     ctx: &Context<'_>,
     message: CreateReply,
-    pool: PoolInDb,
+    pool: &PoolInDb,
 ) -> Result<(), Error> {
     let needs_to_handle_buttons = super::roll::needs_to_handle_buttons(&message);
     ctx.send(message).await?;
@@ -251,7 +251,7 @@ pub async fn reset(
     Ok(())
 }
 pub fn reset_message(pool_name: &str, num_dice: Dice) -> String {
-    format!("Reset pool `{pool_name}` back to {num_dice}!",)
+    format!("Reset pool `{pool_name}` back to `{num_dice}`!",)
 }
 /// Deletes a pool.
 #[poise::command(prefix_command, slash_command)]
@@ -274,7 +274,7 @@ pub async fn delete(
 }
 pub fn delete_message(pool_name: &str, deleted_pool: Pool) -> String {
     format!(
-        "Deleted pool `{pool_name}` (had {} left)",
+        "Deleted pool `{pool_name}` (had `{}` left)",
         deleted_pool.dice(),
     )
 }
@@ -407,20 +407,20 @@ pub async fn droproll(
     thorns: Option<Thorns>,
     #[description = "Roll this pool with potency. Enables show_outcome."] potency: Option<bool>,
 ) -> Result<(), Error> {
-    let (pool, message) = set_inner(
+    let (mut pool, message) = set_inner(
         ctx,
         &pool_name,
         SetValue::Subtract(num_dice_to_drop.unwrap_or(Dice::from(1))),
         scope,
     )
     .await?;
-    let roll_message = roll_inner(&ctx, pool.clone(), show_outcome, thorns, potency).await?;
+    let roll_message = roll_inner(&ctx, &mut pool, show_outcome, thorns, potency).await?;
     let message = format!(
         "{message}\n{}",
         roll_message.content.as_deref().unwrap_or_default()
     );
     let message = roll_message.content(message);
-    send_pool_roll_message(&ctx, message, pool).await?;
+    send_pool_roll_message(&ctx, message, &pool).await?;
     Ok(())
 }
 /// The type for the `num_dice` argument of the [`set`] command.

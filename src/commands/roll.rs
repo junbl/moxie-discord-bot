@@ -344,9 +344,9 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
             ..Default::default()
         }
     }
-    pub fn pool(self, pool: PoolInDb) -> Self {
+    pub fn pool(self, pool: &PoolInDb) -> Self {
         self.pool_remaining(pool.pool.dice())
-            .pool_name(pool.name)
+            .pool_name(pool.name.clone())
             .pool_buttons(pool.id)
     }
     pub fn username(mut self, ctx: &'a Context<'_>) -> Self {
@@ -500,7 +500,7 @@ pub fn needs_to_handle_buttons(reply: &CreateReply) -> bool {
         .is_some_and(|components| !components.is_empty())
 }
 
-pub async fn handle_buttons(ctx: &Context<'_>, pool: PoolInDb) -> Result<(), Error> {
+pub async fn handle_buttons(ctx: &Context<'_>, pool: &PoolInDb) -> Result<(), Error> {
     ctx.defer().await?;
     let pool_id = pool.id;
     while let Some(mci) = ComponentInteractionCollector::new(ctx.serenity_context())
