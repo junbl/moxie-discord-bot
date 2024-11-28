@@ -10,7 +10,6 @@ use serenity::all::{
 use std::fmt::Write;
 use strum::{EnumString, IntoStaticStr};
 
-use crate::commands::fmt_dice;
 use crate::commands::pool::{rolls_str, thorns_str};
 use crate::pools_in_database::{PoolId, PoolInDb};
 use crate::rolls::{
@@ -22,18 +21,24 @@ use super::pool::{delete_message, reset_message};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct RollExpr {
-    dice: u8,
-    thorns: u8,
+    dice: Dice,
+    thorns: Thorns,
 }
 impl RollExpr {
+    fn new(dice: impl Into<Dice>, thorns: impl Into<Thorns>) -> Self {
+        Self {
+            dice: dice.into(),
+            thorns: thorns.into(),
+        }
+    }
     fn roll(
         self,
         roll_dist: &RollDistribution,
         thorn_dist: &ThornDistribution,
     ) -> (Vec<Roll>, Vec<Thorn>) {
         let mut rng = thread_rng();
-        let rolls = roll_dist.roll_n(&mut rng, self.dice as usize).collect();
-        let thorns = thorn_dist.roll_n(&mut rng, self.thorns as usize).collect();
+        let rolls = roll_dist.roll_n(&mut rng, self.dice).collect();
+        let thorns = thorn_dist.roll_n(&mut rng, self.thorns).collect();
         (rolls, thorns)
     }
 }
@@ -52,22 +57,131 @@ impl std::str::FromStr for RollExpr {
 }
 impl std::fmt::Display for RollExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}d", self.dice)?;
-        if self.thorns > 0 {
-            write!(f, "{}t", self.thorns)?;
+        write!(f, "{}", self.dice)?;
+        if !self.thorns.is_empty() {
+            write!(f, "{}", self.thorns)?;
         }
         Ok(())
     }
 }
 
+/// Represents a number of dice.
+///
+/// Comes with logic for parsing and formatting.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(transparent)]
+pub struct Dice {
+    pub dice: u8,
+}
+impl From<u8> for Dice {
+    fn from(dice: u8) -> Dice {
+        Dice { dice }
+    }
+}
+impl std::str::FromStr for Dice {
+    type Err = NomError<String>;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match parse::parse_dice_expression(s).finish() {
+            Ok((_remaining, roll_expr)) => Ok(roll_expr),
+            Err(NomError { input, code }) => Err(NomError {
+                input: input.to_string(),
+                code,
+            }),
+        }
+    }
+}
+impl std::fmt::Display for Dice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}d", self.dice)?;
+        Ok(())
+    }
+}
+impl From<Dice> for Option<u8> {
+    fn from(value: Dice) -> Self {
+        Some(value.dice)
+    }
+}
+impl std::ops::Add for Dice {
+    type Output = Dice;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Dice::from(self.dice.saturating_add(rhs.dice))
+    }
+}
+impl std::ops::Sub for Dice {
+    type Output = Dice;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Dice::from(self.dice.saturating_sub(rhs.dice))
+    }
+}
+impl std::ops::SubAssign<u8> for Dice {
+    fn sub_assign(&mut self, rhs: u8) {
+        *self = *self - Dice::from(rhs);
+    }
+}
+impl std::ops::AddAssign<u8> for Dice {
+    fn add_assign(&mut self, rhs: u8) {
+        *self = *self + Dice::from(rhs);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Thorns {
+    pub thorns: u8,
+}
+impl Thorns {
+    fn is_empty(&self) -> bool {
+        self.thorns > 0
+    }
+}
+impl From<u8> for Thorns {
+    fn from(thorns: u8) -> Self {
+        Thorns { thorns }
+    }
+}
+impl std::str::FromStr for Thorns {
+    type Err = NomError<String>;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match parse::parse_thorns_expression(s).finish() {
+            Ok((_remaining, expr)) => Ok(expr),
+            Err(NomError { input, code }) => Err(NomError {
+                input: input.to_string(),
+                code,
+            }),
+        }
+    }
+}
+impl std::fmt::Display for Thorns {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}t", self.thorns)?;
+        Ok(())
+    }
+}
 mod parse {
-    use super::RollExpr;
+    use super::{Dice, RollExpr, Thorns};
     use nom::bytes::complete::tag;
     use nom::character::complete::{multispace0, u8};
     use nom::combinator::{all_consuming, opt};
-    use nom::sequence::{delimited, terminated, tuple};
+    use nom::sequence::{delimited, preceded, terminated, tuple};
     use nom::IResult;
 
+    pub fn parse_dice_expression(dice_expr: &str) -> IResult<&str, Dice> {
+        let (remaining, dice) = all_consuming(preceded(
+            opt(tag("+")),
+            terminated(u8, opt(preceded(multispace0, tag("d")))),
+        ))(dice_expr)?;
+        Ok((remaining, Dice { dice }))
+    }
+    pub fn parse_thorns_expression(thorns_expr: &str) -> IResult<&str, Thorns> {
+        let (remaining, thorns) = all_consuming(preceded(
+            opt(tag("+")),
+            terminated(u8, opt(preceded(multispace0, tag("t")))),
+        ))(thorns_expr)?;
+        Ok((remaining, Thorns { thorns }))
+    }
     pub fn parse_roll_expression(roll_expr: &str) -> IResult<&str, RollExpr> {
         let (remaining, (dice, thorns)) = all_consuming(tuple((
             terminated(
@@ -79,34 +193,28 @@ mod parse {
         Ok((
             remaining,
             RollExpr {
-                dice: dice.unwrap_or_default(),
-                thorns: thorns.unwrap_or_default(),
+                dice: Dice::from(dice.unwrap_or_default()),
+                thorns: Thorns::from(thorns.unwrap_or_default()),
             },
         ))
     }
     #[cfg(test)]
     mod tests {
-        use crate::commands::roll::RollExpr;
+        use crate::commands::roll::{Dice, RollExpr, Thorns};
 
         #[test]
         fn parse_roll_expressions() {
             let good = [
-                ("1d", RollExpr { dice: 1, thorns: 0 }),
-                ("1d2t", RollExpr { dice: 1, thorns: 2 }),
-                ("1d 2t", RollExpr { dice: 1, thorns: 2 }),
-                ("1d    \n\t   2t", RollExpr { dice: 1, thorns: 2 }),
-                ("1d+2t", RollExpr { dice: 1, thorns: 2 }),
-                ("1d + 2t", RollExpr { dice: 1, thorns: 2 }),
-                ("2t", RollExpr { dice: 0, thorns: 2 }),
-                (
-                    "100d255t",
-                    RollExpr {
-                        dice: 100,
-                        thorns: 255,
-                    },
-                ),
-                ("0d0t", RollExpr { dice: 0, thorns: 0 }),
-                ("", RollExpr { dice: 0, thorns: 0 }),
+                ("1d", RollExpr::new(1, 0)),
+                ("1d2t", RollExpr::new(1, 2)),
+                ("1d 2t", RollExpr::new(1, 2)),
+                ("1d    \n\t   2t", RollExpr::new(1, 2)),
+                ("1d+2t", RollExpr::new(1, 2)),
+                ("1d + 2t", RollExpr::new(1, 2)),
+                ("2t", RollExpr::new(0, 2)),
+                ("100d255t", RollExpr::new(100, 255)),
+                ("0d0t", RollExpr::new(0, 0)),
+                ("", RollExpr::new(0, 0)),
             ];
             for (input, expected) in good {
                 assert_eq!(input.parse::<RollExpr>().unwrap(), expected);
@@ -123,6 +231,38 @@ mod parse {
             ];
             for input in bad {
                 let res = input.parse::<RollExpr>();
+                assert!(res.is_err(), "{input}: {res:?}");
+            }
+        }
+        #[test]
+        fn parse_dice_expressions() {
+            let good = [
+                ("1d", Dice { dice: 1 }),
+                ("3", Dice { dice: 3 }),
+                ("4  d", Dice { dice: 4 }),
+            ];
+            for (input, expected) in good {
+                assert_eq!(input.parse::<Dice>().unwrap(), expected);
+            }
+            let bad = ["1000000000d", "1d1t", "-1d", "1.5d", "1.5dd"];
+            for input in bad {
+                let res = input.parse::<Dice>();
+                assert!(res.is_err(), "{input}: {res:?}");
+            }
+        }
+        #[test]
+        fn parse_thorns_expressions() {
+            let good = [
+                ("1t", Thorns { thorns: 1 }),
+                ("3", Thorns { thorns: 3 }),
+                ("4  t", Thorns { thorns: 4 }),
+            ];
+            for (input, expected) in good {
+                assert_eq!(input.parse::<Thorns>().unwrap(), expected);
+            }
+            let bad = ["1000000000t", "1d1t", "-1t", "1.5t", "1.5tt"];
+            for input in bad {
+                let res = input.parse::<Thorns>();
                 assert!(res.is_err(), "{input}: {res:?}");
             }
         }
@@ -225,10 +365,10 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
         if let Some(pool_name) = self.pool_name {
             write_s!(message, " pool `{pool_name}`");
         } else {
-            let roll_expr = RollExpr {
-                dice: self.rolls.len() as u8,
-                thorns: self.thorns.as_ref().map(Vec::len).unwrap_or_default() as u8,
-            };
+            let roll_expr = RollExpr::new(
+                self.rolls.len() as u8,
+                self.thorns.as_ref().map(Vec::len).unwrap_or_default() as u8,
+            );
             write_s!(message, " `{roll_expr}`");
         }
 
@@ -259,8 +399,8 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
             write_s!(
                 message,
                 "\n### {} → {}",
-                fmt_dice(self.rolls.len() as u8),
-                fmt_dice(pool_remaining),
+                Dice::from(self.rolls.len() as u8),
+                Dice::from(pool_remaining),
             );
 
             if let Some(pool) = self.pool_buttons {
