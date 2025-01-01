@@ -2,3 +2,4 @@
 
 pub use super::channel_pool::Entity as ChannelPool;
 pub use super::server_pool::Entity as ServerPool;
+pub use super::suspense::Entity as Suspense;

@@ -265,11 +265,7 @@ impl Pools {
     }
 
     pub async fn set(&self, pool: &mut PoolInDb, num_dice: SetValue) -> Result<Dice, Error> {
-        let new_size = match num_dice {
-            SetValue::Add(add) => pool.pool.dice() + add,
-            SetValue::Subtract(sub) => pool.pool.dice() - sub,
-            SetValue::Set(set) => set,
-        };
+        let new_size = num_dice.apply(pool.pool.dice());
         pool.pool.set_dice(new_size);
         match_pool_id!(pool.id, |id| ActiveModel {
             id: Unchanged(id),

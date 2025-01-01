@@ -4,3 +4,4 @@ pub mod prelude;
 
 pub mod channel_pool;
 pub mod server_pool;
+pub mod suspense;

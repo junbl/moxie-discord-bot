@@ -10,12 +10,12 @@ members = [".", "entity", "migration"]
 sea-orm = { workspace = true }
 anyhow = "1.0.66"
 entity = { path = "entity" }
-itertools = "0.13.0"
+itertools = "0.14.0"
 poise = "0.6.1"
 rand = "0.8.5"
 rand_distr = "0.4.3"
-serde = { version = "1.0.204", features = ["derive"] }
-serde_json = "1.0.120"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 serenity = { version = "0.12.0", default-features = false, features = [
     "client",
     "gateway",

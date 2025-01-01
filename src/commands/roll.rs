@@ -73,6 +73,11 @@ impl std::fmt::Display for RollExpr {
 pub struct Dice {
     pub dice: u8,
 }
+impl Dice {
+    fn is_empty(&self) -> bool {
+        self.dice == 0
+    }
+}
 impl From<u8> for Dice {
     fn from(dice: u8) -> Dice {
         Dice { dice }
@@ -331,7 +336,7 @@ pub struct RollOutcomeMessageBuilder<'a> {
     #[setters(into)]
     pool_name: Option<String>,
     #[setters(into)]
-    pool_remaining: Option<u8>,
+    pool_remaining: Option<Dice>,
     #[setters(into)]
     pool_buttons: Option<PoolId>,
     potency: bool,
@@ -398,13 +403,13 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
         if let Some(pool_remaining) = self.pool_remaining {
             write_s!(
                 message,
-                "\n### {} → {}",
+                "\n### `{}` → `{}`",
                 Dice::from(self.rolls.len() as u8),
-                Dice::from(pool_remaining),
+                pool_remaining,
             );
 
             if let Some(pool) = self.pool_buttons {
-                if pool_remaining == 0 {
+                if pool_remaining.is_empty() {
                     write_s!(message, " | Pool depleted!");
                     components
                         .get_or_insert_with(Vec::new)

@@ -430,6 +430,15 @@ pub enum SetValue {
     Subtract(Dice),
     Set(Dice),
 }
+impl SetValue {
+    pub fn apply(self, dice: Dice) -> Dice {
+        match self {
+            SetValue::Add(add) => dice + add,
+            SetValue::Subtract(sub) => dice - sub,
+            SetValue::Set(set) => set,
+        }
+    }
+}
 impl std::str::FromStr for SetValue {
     type Err = <Dice as std::str::FromStr>::Err;
 
