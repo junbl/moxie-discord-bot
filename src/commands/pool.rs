@@ -424,7 +424,7 @@ pub async fn droproll(
     Ok(())
 }
 /// The type for the `num_dice` argument of the [`set`] command.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum SetValue {
     Add(Dice),
     Subtract(Dice),
