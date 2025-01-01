@@ -181,7 +181,7 @@ pub async fn down(
 pub async fn check(ctx: Context<'_>) -> Result<(), Error> {
     info!("Received command: suspense check");
     let suspenses = query(suspense::Entity::find(), &ctx).await?;
-    let single_suspense_message = |suspense| format!("# Suspense: {suspense}");
+    let single_suspense_message = |suspense| format!("# Suspense: `{suspense}`");
     let message = if suspenses.is_empty() {
         single_suspense_message(0)
     } else {
