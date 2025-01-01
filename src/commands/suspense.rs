@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use entity::suspense;
 use itertools::Itertools;
 use sea_orm::ActiveValue::{NotSet, Set};
@@ -5,7 +7,9 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, EntityTrait, IntoActiveModel, QueryFilter,
     QuerySelect, Select,
 };
-use tracing::{info, instrument};
+use serenity::futures::stream::iter;
+use serenity::futures::Stream;
+use tracing::{debug, info, instrument};
 
 use crate::commands::pool::SetValue;
 use crate::commands::roll::Dice;
@@ -40,6 +44,7 @@ async fn query_with_opt_challenge(
 ) -> Result<Option<suspense::Model>, sea_orm::DbErr> {
     let condition = Condition::all();
     let condition = condition.add(if let Some(challenge) = challenge {
+        debug!(challenge, "pulling suspense for challenge");
         suspense::Column::Challenge.eq(challenge)
     } else {
         suspense::Column::Challenge.is_null()
@@ -53,10 +58,12 @@ async fn query_with_opt_challenge(
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn set(
     ctx: Context<'_>,
+    #[description = "Optionally, the name of a challenge that this suspense is associated with"]
+    #[autocomplete = "autocomplete_challenge_name"]
     challenge: Option<String>,
     #[description = "Add like `+1`, subtract like `-2`, or set like `6`"] suspense: SetValue,
 ) -> Result<(), Error> {
-    info!("Received command: suspense set");
+    info!(challenge, ?suspense, "Received command: suspense set");
     let message = set_inner(ctx, challenge, suspense).await?;
     ctx.say(message).await?;
     Ok(())
@@ -78,7 +85,7 @@ async fn set_inner(
                             id: NotSet,
                             channel_id: Set(ctx.channel_id().get() as i64),
                             suspense: Set(suspense as i16),
-                            challenge: Set(None),
+                            challenge: Set(challenge.clone()),
                             created: NotSet,
                             updated: NotSet,
                         },
@@ -91,15 +98,33 @@ async fn set_inner(
                 },
             );
 
+    info!(
+        ?suspense,
+        current = suspense_value,
+        "setting new suspense value"
+    );
     let new_suspense = suspense.apply(Dice::from(suspense_value));
+    let new_suspense = new_suspense.dice as i16;
     let active_model = suspense::ActiveModel {
-        suspense: Set(new_suspense.dice as i16),
+        suspense: Set(new_suspense),
         ..current_suspense
     };
     let _ = active_model.save(ctx.data().pools.conn()).await?;
-    let mut message = format!("Set suspense to {new_suspense}");
+    let add_amt_to_msg = |dice, msg| {
+        let mut msg = String::from(msg);
+        if dice != 1.into() {
+            write_s!(msg, " by `{dice}`");
+        }
+        Cow::Owned(msg)
+    };
+    let verb = match suspense {
+        SetValue::Add(dice) => add_amt_to_msg(dice, "Upped suspense"),
+        SetValue::Subtract(dice) => add_amt_to_msg(dice, "Dropped suspense"),
+        SetValue::Set(_) => Cow::Borrowed("Set suspense"),
+    };
+    let mut message = format!("# {verb} to `{new_suspense}`");
     if let Some(challenge) = challenge {
-        write_s!(message, " for challenge {challenge}");
+        write_s!(message, " for challenge `{challenge}`");
     }
 
     Ok(message)
@@ -110,15 +135,19 @@ async fn set_inner(
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn up(
     ctx: Context<'_>,
+    #[autocomplete = "autocomplete_challenge_name"]
+    #[description = "Optionally, the name of a challenge that this suspense is associated with"]
     challenge: Option<String>,
     #[description = "Add like `+1`, subtract like `-2`, or set like `6`. Defaults to 1, or 2 if `challenge` is provided."]
     suspense: Option<SetValue>,
 ) -> Result<(), Error> {
-    info!("Received command: suspense up");
-    let suspense = match suspense.unwrap_or(SetValue::Add(1.into())) {
-        SetValue::Add(dice) => SetValue::Add(dice),
+    info!(challenge, ?suspense, "Received command: suspense up");
+    let suspense = suspense.unwrap_or(SetValue::Add(
+        if challenge.is_some() { 2 } else { 1 }.into(),
+    ));
+    let suspense = match suspense {
+        SetValue::Add(dice) | SetValue::Set(dice) => SetValue::Add(dice),
         SetValue::Subtract(dice) => SetValue::Subtract(dice),
-        SetValue::Set(dice) => SetValue::Add(dice),
     };
     let message = set_inner(ctx, challenge, suspense).await?;
     ctx.say(message).await?;
@@ -130,14 +159,15 @@ pub async fn up(
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn down(
     ctx: Context<'_>,
+    #[description = "Optionally, the name of a challenge that this suspense is associated with"]
+    #[autocomplete = "autocomplete_challenge_name"]
     challenge: Option<String>,
     #[description = "Add like `+1`, subtract like `-2`, or set like `6`. Defaults to 1."] suspense: Option<SetValue>,
 ) -> Result<(), Error> {
-    info!("Received command: suspense down");
-    let suspense = match suspense.unwrap_or(SetValue::Subtract(1.into())) {
-        SetValue::Add(dice) => SetValue::Subtract(dice),
+    info!(challenge, ?suspense, "Received command: suspense down");
+    let suspense = match suspense.unwrap_or(SetValue::Add(1.into())) {
+        SetValue::Add(dice) | SetValue::Set(dice) => SetValue::Subtract(dice),
         SetValue::Subtract(dice) => SetValue::Add(dice),
-        SetValue::Set(dice) => SetValue::Subtract(dice),
     };
     let message = set_inner(ctx, challenge, suspense).await?;
     ctx.say(message).await?;
@@ -171,15 +201,30 @@ pub async fn check(ctx: Context<'_>) -> Result<(), Error> {
                         total_suspense += suspense.suspense;
                         format!(
                             "{:width$}{}",
-                            suspense.challenge.unwrap_or_default(),
+                            suspense.challenge.map_or("(Global)".into(), Cow::Owned),
                             suspense.suspense,
                         )
                     })
                     .join("\n");
-                format!("```\n{message}\n```# Total Suspense: `{total_suspense}`")
+                format!("# Total Suspense: `{total_suspense}`\n```{message}```")
             }
         }
     };
     ctx.say(message).await?;
     Ok(())
+}
+
+async fn autocomplete_challenge_name<'a>(
+    ctx: Context<'a>,
+    partial: &'a str,
+) -> impl Stream<Item = String> + 'a {
+    let challenges = query(
+        suspense::Entity::find()
+            .filter(suspense::Column::Challenge.is_not_null())
+            .filter(suspense::Column::Challenge.contains(partial)),
+        &ctx,
+    )
+    .await
+    .unwrap_or_default();
+    iter(challenges.into_iter().filter_map(|c| c.challenge))
 }

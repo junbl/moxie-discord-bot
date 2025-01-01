@@ -49,6 +49,7 @@ impl MigrationTrait for Migration {
                 Index::create()
                     .table(Suspense::Table)
                     .unique()
+                    .nulls_not_distinct()
                     .col(Suspense::Challenge)
                     .col(Suspense::ChannelId)
                     .take(),
