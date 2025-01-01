@@ -110,9 +110,10 @@ async fn set_inner(
         ..current_suspense
     };
     let _ = active_model.save(ctx.data().pools.conn()).await?;
-    let add_amt_to_msg = |dice, msg| {
+    let add_amt_to_msg = |dice: Dice, msg| {
         let mut msg = String::from(msg);
-        if dice != 1.into() {
+        let dice = dice.dice;
+        if dice != 1 {
             write_s!(msg, " by `{dice}`");
         }
         Cow::Owned(msg)
