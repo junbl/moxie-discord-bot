@@ -28,6 +28,7 @@ async fn main(
     #[shuttle_runtime::Secrets] secret_store: SecretStore,
     #[shuttle_shared_db::Postgres] conn_str: String,
 ) -> ShuttleSerenity {
+    tracing::info!("Initializing");
     let discord_token = secret_store
         .get("DISCORD_TOKEN")
         .context("'DISCORD_TOKEN' was not found")?;
