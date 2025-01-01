@@ -7,6 +7,7 @@ use serenity::{
     FutureExt,
 };
 use thiserror::Error;
+use tracing::info;
 
 use crate::{rolls::Pool, Context, Error};
 pub mod pool;
@@ -61,7 +62,7 @@ impl ArgumentConvert for Scope {
 /// Health check
 #[poise::command(slash_command)]
 pub async fn hello(ctx: Context<'_>) -> Result<(), Error> {
-    tracing::info!("Received command: hello");
+    info!("Received command: hello");
     ctx.say("<3").await?;
     Ok(())
 }
@@ -72,6 +73,7 @@ pub async fn quickpool(
     ctx: Context<'_>,
     #[description = "Number of dice in the pool"] num_dice: Dice,
 ) -> Result<(), Error> {
+    info!("Got command: quickpool");
     let mut pool = Pool::new(num_dice);
     let rolls = pool.roll(&ctx.data().roll_dist);
 
@@ -86,6 +88,7 @@ pub async fn quickpool(
 /// Print out an empty line to signify a break in the scene.
 #[poise::command(slash_command, prefix_command)]
 pub async fn scenebreak(ctx: Context<'_>) -> Result<(), crate::Error> {
+    info!("Got command: scenebreak");
     ctx.say("```\n \n```").await?;
     Ok(())
 }
@@ -96,6 +99,7 @@ pub async fn help(
     ctx: Context<'_>,
     #[description = "Specific command to show help about"] command: Option<String>,
 ) -> Result<(), Error> {
+    info!("Got command: help");
     let config = poise::builtins::HelpConfiguration {
         extra_text_at_bottom: "\
             Type /help command for more info on a command.
