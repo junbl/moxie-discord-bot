@@ -8,6 +8,7 @@ use sea_orm::{DatabaseConnection, QuerySelect};
 use serenity::futures::{Stream, TryFutureExt, TryStreamExt};
 
 use crate::commands::pool::SetValue;
+use crate::commands::roll::Dice;
 use crate::commands::Scope;
 use crate::error::MoxieError;
 use crate::rolls::{Pool, Roll, RollDistribution};
@@ -93,10 +94,10 @@ pub struct PoolInDb {
     pub pool: Pool,
     pub name: String,
     pub id: PoolId,
-    original_size: u8,
+    original_size: Dice,
 }
 impl PoolInDb {
-    pub fn new(dice: u8, name: String, id: PoolId, original_size: u8) -> Self {
+    pub fn new(dice: Dice, name: String, id: PoolId, original_size: Dice) -> Self {
         Self {
             pool: Pool::new(dice),
             name,
@@ -116,7 +117,7 @@ impl PoolInDb {
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
-    pub fn original_size(&self) -> u8 {
+    pub fn original_size(&self) -> Dice {
         self.original_size
     }
     pub async fn roll(
@@ -128,7 +129,7 @@ impl PoolInDb {
         match_pool_id!(self.id, |id| async move {
             ActiveModel {
                 id: Unchanged(id),
-                current_size: Set(self.pool.dice() as i16),
+                current_size: Set(self.pool.dice().dice as i16),
                 updated: Set(chrono::Utc::now()),
                 ..Default::default()
             }
@@ -148,11 +149,11 @@ impl PoolInDb {
             Err(anyhow!("Didn't delete exactly one row: {}", delete.rows_affected).into())
         }
     }
-    pub async fn reset(&self, pools: &Pools) -> Result<u8, Error> {
+    pub async fn reset(&self, pools: &Pools) -> Result<Dice, Error> {
         // should transaction but &self not 'static, but op is idempotent so nbd
         let original_size = match_pool_id!(self.id, |id| ActiveModel {
             id: Unchanged(id),
-            current_size: Set(self.original_size as i16),
+            current_size: Set(self.original_size.dice as i16),
             updated: Set(chrono::Utc::now()),
             ..Default::default()
         }
@@ -165,20 +166,20 @@ impl PoolInDb {
 impl From<server_pool::Model> for PoolInDb {
     fn from(pool: server_pool::Model) -> Self {
         PoolInDb::new(
-            pool.current_size as u8,
+            Dice::from(pool.current_size as u8),
             pool.name,
             PoolId::Server(pool.id),
-            pool.original_size as u8,
+            Dice::from(pool.original_size as u8),
         )
     }
 }
 impl From<channel_pool::Model> for PoolInDb {
     fn from(pool: channel_pool::Model) -> Self {
         PoolInDb::new(
-            pool.current_size as u8,
+            Dice::from(pool.current_size as u8),
             pool.name,
             PoolId::Channel(pool.id),
-            pool.original_size as u8,
+            Dice::from(pool.original_size as u8),
         )
     }
 }
@@ -210,12 +211,12 @@ impl Pools {
         &self,
         scope: Scope,
         pool_name: String,
-        pool_size: u8,
+        pool_size: Dice,
     ) -> Result<(), Error> {
         if self.get(scope, &pool_name).await.is_ok() {
             Err(anyhow!("Pool `{pool_name}` already exists!").into())
         } else {
-            let pool_size = pool_size as i16;
+            let pool_size = pool_size.dice as i16;
             match scope {
                 Scope::Server(server_id) => {
                     let new_pool = server_pool::ActiveModel {
@@ -246,6 +247,7 @@ impl Pools {
         pool.delete(self).await
     }
 
+    #[expect(dead_code, reason = "will be used when auto clean is implemented")]
     pub async fn clear_old_pools(&self) -> Result<(), sea_orm::DbErr> {
         let server_res = server_pool::Entity::delete_many()
             .filter(
@@ -262,16 +264,12 @@ impl Pools {
         server_res.and(channel_res).map(|_| ())
     }
 
-    pub async fn set(&self, pool: &mut PoolInDb, num_dice: SetValue) -> Result<u8, Error> {
-        let new_size = match num_dice {
-            SetValue::Add(add) => pool.pool.dice().saturating_add(add),
-            SetValue::Subtract(sub) => pool.pool.dice().saturating_sub(sub),
-            SetValue::Set(set) => set,
-        };
+    pub async fn set(&self, pool: &mut PoolInDb, num_dice: SetValue) -> Result<Dice, Error> {
+        let new_size = num_dice.apply(pool.pool.dice());
         pool.pool.set_dice(new_size);
         match_pool_id!(pool.id, |id| ActiveModel {
             id: Unchanged(id),
-            current_size: Set(new_size as i16),
+            current_size: Set(new_size.dice as i16),
             updated: Set(chrono::Utc::now()),
             ..Default::default()
         }
@@ -279,7 +277,7 @@ impl Pools {
         .map_ok(|_| ()))?;
         Ok(new_size)
     }
-    pub async fn reset(&self, scope: Scope, pool_name: &str) -> Result<u8, Error> {
+    pub async fn reset(&self, scope: Scope, pool_name: &str) -> Result<Dice, Error> {
         // should transaction but &self not 'static, but op is idempotent so nbd
         let pool = self.get(scope, pool_name).await?;
         pool.reset(self).await

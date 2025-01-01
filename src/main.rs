@@ -8,7 +8,7 @@ mod error;
 mod pools_in_database;
 mod rolls;
 
-use commands::{help, pool::pool, quickpool, roll::roll, scenebreak};
+use commands::{help, pool::pool, quickpool, roll::roll, scenebreak, suspense::suspense};
 
 // use commands::pool::{check, delete, new, reset, roll, set};
 use pools_in_database::Pools;
@@ -28,6 +28,7 @@ async fn main(
     #[shuttle_runtime::Secrets] secret_store: SecretStore,
     #[shuttle_shared_db::Postgres] conn_str: String,
 ) -> ShuttleSerenity {
+    tracing::info!("Initializing");
     let discord_token = secret_store
         .get("DISCORD_TOKEN")
         .context("'DISCORD_TOKEN' was not found")?;
@@ -37,7 +38,14 @@ async fn main(
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![pool(), quickpool(), help(), roll(), scenebreak()],
+            commands: vec![
+                pool(),
+                suspense(),
+                quickpool(),
+                help(),
+                roll(),
+                scenebreak(),
+            ],
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {

@@ -54,6 +54,7 @@ impl MigrationTrait for Migration {
                 Index::create()
                     .table(ServerPool::Table)
                     .unique()
+                    .nulls_not_distinct()
                     .col(ServerPool::Name)
                     .col(ServerPool::ServerId)
                     .take(),
@@ -107,6 +108,7 @@ impl MigrationTrait for Migration {
                 Index::create()
                     .table(ChannelPool::Table)
                     .unique()
+                    .nulls_not_distinct()
                     .col(ChannelPool::Name)
                     .col(ChannelPool::ChannelId)
                     .take(),
