@@ -2,3 +2,4 @@
 /*/target
 Secrets*.toml
 .env
+.shuttle*
