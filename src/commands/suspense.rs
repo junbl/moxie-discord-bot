@@ -139,7 +139,7 @@ pub async fn up(
     #[autocomplete = "autocomplete_challenge_name"]
     #[description = "Optionally, the name of a challenge that this suspense is associated with"]
     challenge: Option<String>,
-    #[description = "Add like `+1`, subtract like `-2`, or set like `6`. Defaults to 1, or 2 if `challenge` is provided."]
+    #[description = "Add like `+1`, subtract like `-2`, or set like `6`. Defaults to +1, or +2 if `challenge` is provided."]
     suspense: Option<SetValue>,
 ) -> Result<(), Error> {
     info!(challenge, ?suspense, "Received command: suspense up");
@@ -163,7 +163,7 @@ pub async fn down(
     #[description = "Optionally, the name of a challenge that this suspense is associated with"]
     #[autocomplete = "autocomplete_challenge_name"]
     challenge: Option<String>,
-    #[description = "Add like `+1`, subtract like `-2`, or set like `6`. Defaults to 1."] suspense: Option<SetValue>,
+    #[description = "Add like `+1`, subtract like `-2`, or set like `6`. Defaults to -1."] suspense: Option<SetValue>,
 ) -> Result<(), Error> {
     info!(challenge, ?suspense, "Received command: suspense down");
     let suspense = match suspense.unwrap_or(SetValue::Add(1.into())) {

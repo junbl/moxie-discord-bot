@@ -68,19 +68,24 @@ impl std::fmt::Display for RollExpr {
 /// Represents a number of dice.
 ///
 /// Comes with logic for parsing and formatting.
-#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(transparent)]
 pub struct Dice {
     pub dice: u8,
 }
 impl Dice {
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.dice == 0
     }
 }
 impl From<u8> for Dice {
     fn from(dice: u8) -> Dice {
         Dice { dice }
+    }
+}
+impl From<Dice> for usize {
+    fn from(dice: Dice) -> usize {
+        dice.dice.into()
     }
 }
 impl std::str::FromStr for Dice {
@@ -112,6 +117,11 @@ impl std::ops::Add for Dice {
 
     fn add(self, rhs: Self) -> Self::Output {
         Dice::from(self.dice.saturating_add(rhs.dice))
+    }
+}
+impl std::ops::AddAssign for Dice {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
     }
 }
 impl std::ops::Sub for Dice {
@@ -283,7 +293,9 @@ pub async fn roll(
     ctx: Context<'_>,
     #[description = "A roll expression, like `2d` or `3d1t`"] mut dice: RollExpr,
     #[description = "One of your dice will crit on a 6. Does not add +1d."] mastery: Option<bool>,
-    #[description = "One of your dice will crit on a 6. Adds +1d."] mastery_plus_1d: Option<bool>,
+    #[description = "The first n dice of your roll are mastery dice."] mastery_dice: Option<Dice>,
+    #[description = "Adds the specified number of mastery dice to your roll."]
+    plus_mastery_dice: Option<Dice>,
     #[description = "Treats rolls of 5 as 6"] fives_count_as_sixes: Option<bool>,
     #[description = "Treats rolls of 4 as 1"] fours_count_as_ones: Option<bool>,
     #[description = "Treats 5s as 6s and 4s as 1s (same as the individual options)"] wild: Option<
@@ -293,13 +305,14 @@ pub async fn roll(
     #[description = "Prints out that this was rolled with potency. Does not modify the roll."]
     potency: Option<bool>,
 ) -> Result<(), Error> {
-    let mastery_plus_1d = mastery_plus_1d.unwrap_or_default();
-    if mastery_plus_1d {
-        dice.dice += 1;
-    }
+    dice.dice += plus_mastery_dice.unwrap_or_default();
+
     let (rolls, thorns) = dice.roll(&ctx.data().roll_dist, &ctx.data().thorn_dist);
 
-    let mastery = mastery.unwrap_or_default() || mastery_plus_1d;
+    let num_mastery_dice = mastery_dice
+        .or(plus_mastery_dice)
+        .or(mastery.map(|m| Dice::from(if m { 1 } else { 0 })))
+        .unwrap_or_default();
     let wild = wild.unwrap_or_default();
     let fives_count_as_sixes = wild || fives_count_as_sixes.unwrap_or_default();
     let fours_count_as_ones = wild || fours_count_as_ones.unwrap_or_default();
@@ -311,7 +324,7 @@ pub async fn roll(
     let message = RollOutcomeMessageBuilder::new(&rolls)
         .username(&ctx)
         .thorns(thorns)
-        .mastery(mastery)
+        .mastery(num_mastery_dice)
         .roll_name(name)
         .potency(potency.unwrap_or_default())
         .finish();
@@ -330,7 +343,7 @@ pub struct RollOutcomeMessageBuilder<'a> {
     user_id: Option<serenity::all::UserId>,
     #[setters(into)]
     thorns: Option<Vec<Thorn>>,
-    mastery: bool,
+    mastery: Dice,
     #[setters(into)]
     roll_name: Option<String>,
     #[setters(into)]

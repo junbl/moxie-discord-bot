@@ -69,17 +69,25 @@ fn get_thorn_emoji(thorn: Thorn) -> &'static str {
     .expect("Thorns must only be in the 1-8 range")
 }
 
-pub fn rolls_str(rolls: &[Roll], mastery_die: bool) -> String {
+pub fn rolls_str(rolls: &[Roll], mastery_dice: Dice) -> String {
     let mut emoji_iter = rolls.iter().copied().map(get_die_emoji);
-    if mastery_die {
+    // let mastery_marker = "܀";
+    let mastery_marker = "ͫ";
+
+    if !mastery_dice.is_empty() {
         emoji_iter
             .enumerate()
             .map(|(i, emoji)| {
-                if i == 0 {
-                    Cow::Owned(format!(":sparkles:{emoji}:sparkles: "))
+                let mut emoji = if i == 0 {
+                    Cow::Owned(format!("{mastery_marker}{emoji}"))
                 } else {
                     Cow::Borrowed(emoji)
+                };
+                if i + 1 == usize::from(mastery_dice.dice) {
+                    emoji += mastery_marker;
+                    emoji += " ";
                 }
+                emoji
             })
             .join(" ")
     } else {

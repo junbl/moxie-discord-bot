@@ -88,34 +88,39 @@ impl std::fmt::Display for Roll {
             Roll::Messy(_) => "Messy",
             Roll::Perfect(_) => "Perfect",
             Roll::Critical => "Critical!",
-            Roll::MultiCritical => "Double critical!",
+            Roll::MultiCritical => "Multi critical! Take *spark*!",
         }
         .fmt(f)
     }
 }
 
-pub fn roll_result(rolls: impl IntoIterator<Item = Roll>, mastery: bool) -> Roll {
-    let mut current_max = Roll::Grim(1);
+pub fn roll_result(rolls: impl IntoIterator<Item = Roll>, mastery_dice: Dice) -> Roll {
+    let mut current_max = Roll::Disaster(1);
     let mut any_mastery_crit = false;
     for (index, roll) in rolls.into_iter().enumerate() {
-        let this_roll_style_crit = mastery && index == 0 && roll.is_perfect();
-        any_mastery_crit |= this_roll_style_crit;
+        let this_roll_mastery_crit = index < mastery_dice.into() && roll.is_perfect();
+        if this_roll_mastery_crit && any_mastery_crit {
+            tracing::info!("Multi crit from mastery dice");
+            current_max = Roll::MultiCritical;
+            break;
+        }
+        any_mastery_crit |= this_roll_mastery_crit;
         tracing::info!(
             index,
             ?roll,
             any_mastery_crit,
-            this_roll_style_crit,
-            perfect = roll.is_perfect(),
+            this_roll_mastery_crit,
             "roll"
         );
-        if any_mastery_crit && !this_roll_style_crit && roll.is_perfect() {
+        // need to check at least two rolls to see if it's a multicrit
+        if any_mastery_crit && index != 0 && roll.is_perfect() {
             tracing::info!("Multi crit");
             current_max = Roll::MultiCritical;
             break;
-        } else if this_roll_style_crit || (current_max.is_perfect() && roll.is_perfect()) {
+        } else if this_roll_mastery_crit || (current_max.is_perfect() && roll.is_perfect()) {
             tracing::info!("crit");
             current_max = Roll::Critical;
-            if !this_roll_style_crit {
+            if !this_roll_mastery_crit {
                 break;
             }
         } else {
@@ -253,7 +258,7 @@ impl Pool {
 
 #[cfg(test)]
 mod tests {
-    use crate::rolls::{replace_rolls, roll_replacements};
+    use crate::rolls::{replace_rolls, roll_replacements, Dice};
 
     use super::{roll_result, Roll};
 
@@ -271,7 +276,7 @@ mod tests {
             ),
         ];
         for (input, expected) in inputs {
-            assert_eq!(roll_result(input, false), expected);
+            assert_eq!(roll_result(input, Dice::default()), expected);
         }
     }
 
@@ -294,7 +299,33 @@ mod tests {
             ),
         ];
         for (input, expected) in inputs {
-            assert_eq!(roll_result(input, true), expected);
+            assert_eq!(roll_result(input, Dice::from(1)), expected);
+        }
+        let inputs = [
+            (
+                vec![Roll::Perfect(6), Roll::Grim(1), Roll::Perfect(6)],
+                Roll::MultiCritical,
+            ),
+            (
+                vec![Roll::Perfect(6), Roll::Grim(1), Roll::Perfect(6)],
+                Roll::MultiCritical,
+            ),
+        ];
+        for (input, expected) in inputs {
+            assert_eq!(roll_result(input, Dice::from(2)), expected);
+        }
+        let inputs = [
+            (
+                vec![Roll::Perfect(6), Roll::Grim(1), Roll::Perfect(6)],
+                Roll::MultiCritical,
+            ),
+            (
+                vec![Roll::Perfect(6), Roll::Grim(1), Roll::Messy(5), Roll::Perfect(6)],
+                Roll::MultiCritical,
+            ),
+        ];
+        for (input, expected) in inputs {
+            assert_eq!(roll_result(input, Dice::from(3)), expected);
         }
     }
     #[test]
@@ -306,7 +337,7 @@ mod tests {
         ];
         for (input, expected) in inputs {
             let input = replace_rolls(input, &[(Roll::Messy(5), Roll::Perfect(5))]);
-            assert_eq!(roll_result(input, false,), expected);
+            assert_eq!(roll_result(input, Dice::default()), expected);
         }
     }
     #[test]
@@ -317,7 +348,7 @@ mod tests {
         ];
         for (input, expected) in inputs {
             let input = replace_rolls(input, &[(Roll::Messy(5), Roll::Perfect(5))]);
-            assert_eq!(roll_result(input, true,), expected);
+            assert_eq!(roll_result(input, Dice::from(1)), expected);
         }
     }
     #[test]
@@ -329,7 +360,7 @@ mod tests {
         ];
         for (input, expected) in inputs {
             let input = replace_rolls(input, &roll_replacements(true, true));
-            assert_eq!(roll_result(input, false), expected);
+            assert_eq!(roll_result(input, Dice::default()), expected);
         }
     }
 }
