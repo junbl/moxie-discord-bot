@@ -81,3 +81,15 @@ Checks how many dice are currently in the pool without rolling it.
 ```
 /pool check {pool_name} [{scope}]
 ```
+
+
+### Contribution
+Contributions are always welcome, no matter your skill level! Check out the Oddity Press Discord for discussion of this bot and other community tools.
+
+#### Past problems
+
+```
+Error in user data setup: Invalid Form Body (1.options.0.options.1.description: Must be between 1 and 100 in length.)
+```
+
+The total length of any slash command description must be less than 100 characters.

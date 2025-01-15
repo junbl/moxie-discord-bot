@@ -328,18 +328,17 @@ mod parse {
 pub async fn roll(
     ctx: Context<'_>,
     #[description = "A roll expression, like `2d` or `3d1t`"] mut dice: RollExpr,
-    #[description = "One of your dice will crit on a 6. Does not add +1d."] mastery: Option<bool>,
-    #[description = "The first n dice of your roll are mastery dice. Does not add any dice."]
+    #[description = "One of your dice will crit on a 6. Does not add 1d."]
+    mastery: Option<bool>,
+    #[description = "The first n dice of your roll are mastery dice"]
     mastery_dice: Option<Dice>,
-    #[description = "Adds the specified number of mastery dice to your roll."]
+    #[description = "Adds the specified number of mastery dice to your roll"]
     plus_mastery_dice: Option<Dice>,
-    #[description = "Treats rolls of 5 as 6."] fives_count_as_sixes: Option<bool>,
-    #[description = "Treats rolls of 4 as 1."] fours_count_as_ones: Option<bool>,
-    #[description = "Treats 5s as 6s and 4s as 1s (same as the individual options)."] wild: Option<
+    #[description = "Treats 5s as 6s and 4s as 1s"] wild: Option<
         bool,
     >,
-    #[description = "Prints out the given name with the roll to show what this roll is for."] name: Option<String>,
-    #[description = "Prints out that this was rolled with potency. Does not modify the roll."]
+    #[description = "Prints out the given name with the roll to show what this roll is for"] name: Option<String>,
+    #[description = "Prints out that this was rolled with potency"]
     potency: Option<bool>,
 ) -> Result<(), Error> {
     // update the mastery dice in the roll expression
@@ -365,12 +364,10 @@ pub async fn roll(
     let (rolls, thorns) = dice.roll(&ctx.data().roll_dist, &ctx.data().thorn_dist);
 
     let wild = wild.unwrap_or_default();
-    let fives_count_as_sixes = wild || fives_count_as_sixes.unwrap_or_default();
-    let fours_count_as_ones = wild || fours_count_as_ones.unwrap_or_default();
 
     let rolls = replace_rolls(
         rolls,
-        &roll_replacements(fives_count_as_sixes, fours_count_as_ones),
+        &roll_replacements(wild, wild),
     );
     let message = RollOutcomeMessageBuilder::new(&rolls)
         .username(&ctx)
