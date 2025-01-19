@@ -302,10 +302,7 @@ mod tests {
             assert_eq!(roll_result(input, Dice::from(1)), expected);
         }
         let inputs = [
-            (
-                vec![Roll::Messy(5), Roll::Perfect(6)],
-                Roll::Critical,
-            ),
+            (vec![Roll::Messy(5), Roll::Perfect(6)], Roll::Critical),
             (
                 vec![Roll::Perfect(6), Roll::Grim(1), Roll::Perfect(6)],
                 Roll::MultiCritical,
@@ -324,7 +321,12 @@ mod tests {
                 Roll::MultiCritical,
             ),
             (
-                vec![Roll::Perfect(6), Roll::Grim(1), Roll::Messy(5), Roll::Perfect(6)],
+                vec![
+                    Roll::Perfect(6),
+                    Roll::Grim(1),
+                    Roll::Messy(5),
+                    Roll::Perfect(6),
+                ],
                 Roll::MultiCritical,
             ),
         ];
