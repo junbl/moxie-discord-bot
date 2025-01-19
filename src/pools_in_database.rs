@@ -278,7 +278,12 @@ impl Pools {
         .map_ok(|_| ()))?;
         Ok(new_size)
     }
-    pub async fn set_max(&self, pool: &mut PoolInDb, num_dice: SetValue, reset: bool) -> Result<Dice, Error> {
+    pub async fn set_max(
+        &self,
+        pool: &mut PoolInDb,
+        num_dice: SetValue,
+        reset: bool,
+    ) -> Result<Dice, Error> {
         let new_size = num_dice.apply(pool.pool.dice());
         let mut current_size = NotSet;
 

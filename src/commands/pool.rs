@@ -477,6 +477,10 @@ async fn check_inner(
 /// Drops one or more dice from the pool, then rolls it.
 #[poise::command(prefix_command, slash_command)]
 #[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "sorry for adding too many features ig"
+)]
 pub async fn droproll(
     ctx: Context<'_>,
     #[autocomplete = "autocomplete_pool_name"]

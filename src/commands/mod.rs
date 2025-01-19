@@ -77,7 +77,7 @@ pub async fn quickpool(
 ) -> Result<(), Error> {
     info!("Got command: quickpool");
     let mut pool = Pool::new(num_dice);
-    let rolls = pool.roll(&ctx.data().roll_dist);
+    let rolls = pool.roll(&ctx.data().roll_dist, None);
 
     let message = crate::commands::roll::RollOutcomeMessageBuilder::new(&rolls)
         .pool_remaining(pool.dice())
