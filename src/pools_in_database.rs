@@ -213,12 +213,12 @@ impl Pools {
         scope: Scope,
         pool_name: String,
         pool_size: Dice,
-    ) -> Result<PoolId, Error> {
+    ) -> Result<PoolInDb, Error> {
         if self.get(scope, &pool_name).await.is_ok() {
             Err(anyhow!("Pool `{pool_name}` already exists!").into())
         } else {
             let pool_size = pool_size.dice as i16;
-            let new_pool_id = match scope {
+            let new_pool = match scope {
                 Scope::Server(server_id) => {
                     let new_pool = server_pool::ActiveModel {
                         server_id: Set(server_id.get() as i64),
@@ -228,7 +228,7 @@ impl Pools {
                         ..Default::default()
                     };
                     let new_pool = new_pool.insert(&self.conn).await?;
-                    PoolId::Server(new_pool.id)
+                    new_pool.into()
                 }
                 Scope::Channel(channel_id) => {
                     let new_pool = channel_pool::ActiveModel {
@@ -239,10 +239,10 @@ impl Pools {
                         ..Default::default()
                     };
                     let new_pool = new_pool.insert(&self.conn).await?;
-                    PoolId::Channel(new_pool.id)
+                    new_pool.into()
                 }
             };
-            Ok(new_pool_id)
+            Ok(new_pool)
         }
     }
     pub async fn delete(&self, scope: Scope, pool_name: &str) -> Result<Pool, Error> {

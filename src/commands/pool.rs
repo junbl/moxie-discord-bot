@@ -186,14 +186,14 @@ pub async fn new(
 ) -> Result<(), Error> {
     info!("Received command: pool new");
     let message = format!("Created new pool `{name}` with {num_dice}!");
-    let pool_id = ctx
+    let mut pool = ctx
         .data()
         .pools
         .create(scope_or_default(scope, &ctx), name, num_dice)
         .await?;
 
     let components = vec![CreateActionRow::Buttons(vec![CreateButton::new(
-        PoolNewButtonInteraction::new(PoolNewButtonAction::Roll, pool_id),
+        PoolNewButtonInteraction::new(PoolNewButtonAction::Roll, pool.id),
     )
     .label(PoolNewButtonAction::Roll)
     .style(ButtonStyle::Primary)])];
@@ -202,6 +202,7 @@ pub async fn new(
         .content(message)
         .components(components);
     ctx.send(reply).await?;
+    handle_buttons::<PoolNewButtonAction>(&ctx, &mut pool).await?;
     Ok(())
 }
 struct PoolNewButtonInteraction {
@@ -243,7 +244,7 @@ impl From<PoolNewButtonInteraction> for String {
 }
 #[derive(Debug, EnumString, IntoStaticStr)]
 enum PoolNewButtonAction {
-    #[strum(serialize = "r")]
+    #[strum(serialize = "o")]
     Roll,
 }
 impl From<PoolNewButtonAction> for String {
