@@ -163,7 +163,9 @@ async fn autocomplete_pool_name<'a>(
     prefix_command,
     aliases("p"),
     subcommand_required,
-    subcommands("new", "roll", "reset", "delete", "set", "check", "list", "droproll")
+    subcommands(
+        "new", "roll", "reset", "delete", "set", "setmax", "check", "list", "droproll"
+    )
 )]
 pub async fn pool(_: Context<'_>) -> Result<(), Error> {
     Ok(())
@@ -393,6 +395,36 @@ pub async fn set_inner(
     let new_size = ctx.data().pools.set(&mut pool, num_dice).await?;
     let message = format!("Set pool `{pool_name}` `{starting_size}` → `{new_size}`!",);
     Ok((pool, message))
+}
+
+/// Manually change the amount of maximum dice in a pool.
+///
+/// To set to `n` dice, use `set {pool} n`.
+/// To add `n` dice to the pool, use `set {pool} +n`.
+/// To remove `n` dice from the pool, use `set {pool} -n`.
+#[poise::command(prefix_command, slash_command)]
+#[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
+pub async fn setmax(
+    ctx: Context<'_>,
+    #[autocomplete = "autocomplete_pool_name"]
+    #[description = "Name of the pool"]
+    pool_name: String,
+    #[description = "Add like `+1`, subtract like `-2`, or set like `6`"] num_dice: SetValue,
+    #[description = "Set the pool's current size to the new max size"] reset: Option<bool>,
+    #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
+) -> Result<(), Error> {
+    info!("Received command: set max");
+    let mut pool = get_pool_try_all_scopes(&ctx, &pool_name, scope).await?;
+    let starting_size = pool.original_size();
+    let new_size = ctx
+        .data()
+        .pools
+        .set_max(&mut pool, num_dice, reset.unwrap_or_default())
+        .await?;
+    let message =
+        format!("Updated max size of pool `{pool_name}` from `{starting_size}` → `{new_size}`!",);
+    ctx.say(message).await?;
+    Ok(())
 }
 
 /// Checks the current number of dice in a pool without rolling it.

@@ -2,7 +2,7 @@
 
 use anyhow::anyhow;
 use entity::{channel_pool, server_pool};
-use sea_orm::ActiveValue::{Set, Unchanged};
+use sea_orm::ActiveValue::{NotSet, Set, Unchanged};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use sea_orm::{DatabaseConnection, QuerySelect};
 use serenity::futures::{Stream, TryFutureExt, TryStreamExt};
@@ -275,6 +275,27 @@ impl Pools {
         }
         .update(&self.conn)
         .map_ok(|_| ()))?;
+        Ok(new_size)
+    }
+    pub async fn set_max(&self, pool: &mut PoolInDb, num_dice: SetValue, reset: bool) -> Result<Dice, Error> {
+        let new_size = num_dice.apply(pool.pool.dice());
+        let mut current_size = NotSet;
+
+        if reset {
+            pool.pool.set_dice(new_size);
+            current_size = Set(new_size.dice as i16);
+        }
+
+        match_pool_id!(pool.id, |id| ActiveModel {
+            id: Unchanged(id),
+            current_size,
+            original_size: Set(new_size.dice as i16),
+            updated: Set(chrono::Utc::now()),
+            ..Default::default()
+        }
+        .update(&self.conn)
+        .map_ok(|_| ()))?;
+
         Ok(new_size)
     }
     pub async fn reset(&self, scope: Scope, pool_name: &str) -> Result<Dice, Error> {
