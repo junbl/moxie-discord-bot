@@ -9,6 +9,7 @@ use serenity::all::{
 };
 use std::fmt::Write;
 use strum::{EnumString, IntoStaticStr};
+use tracing::instrument;
 
 use crate::commands::pool::{rolls_str, thorns_str};
 use crate::pools_in_database::{PoolId, PoolInDb};
@@ -229,6 +230,7 @@ mod parse {
     pub fn parse_roll_expression(roll_expr: &str) -> IResult<&str, RollExpr> {
         let optional_plus_before =
             |p| preceded(delimited(multispace0, opt(tag("+")), multispace0), p);
+        assert!(optional_plus_before(opt(terminated(u8, tag("m"))))("").is_ok());
         let (remaining, (dice, (thorns, mastery))) = all_consuming(pair(
             opt(terminated(u8, tag("d"))),
             permutation((
@@ -325,6 +327,7 @@ mod parse {
 /// Use an expression like `/roll 3d2t`.
 #[poise::command(slash_command, prefix_command)]
 #[allow(clippy::too_many_arguments)]
+#[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn roll(
     ctx: Context<'_>,
     #[description = "A roll expression, like `2d` or `3d1t`"] mut dice: RollExpr,
@@ -348,23 +351,23 @@ pub async fn roll(
     if replace_with_mastery_dice > dice.dice {
         return Err(format!(
             "Got request to treat more dice as mastery dice than were in the pool: \
-                {replace_with_mastery_dice} > {d}\nDid you mean to use `plus_mastery_dice`?",
+                `{replace_with_mastery_dice}` > `{d}`\nDid you mean to use `plus_mastery_dice`?",
             d = dice.dice,
         )
         .into());
     }
     dice.dice -= replace_with_mastery_dice;
-    dice.dice += replace_with_mastery_dice;
+    dice.mastery += replace_with_mastery_dice;
     dice.mastery += plus_mastery_dice.unwrap_or_default();
 
     if dice.is_empty() {
         return Err("*a lonely wind gusts across an empty table*".into());
     }
 
+    tracing::info!(rollexpr=?dice, "rolling");
     let (rolls, thorns) = dice.roll(&ctx.data().roll_dist, &ctx.data().thorn_dist);
 
     let wild = wild.unwrap_or_default();
-
     let rolls = replace_rolls(
         rolls,
         &roll_replacements(wild, wild),
@@ -432,7 +435,7 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
             write_s!(message, " pool `{pool_name}`");
         } else {
             let roll_expr = RollExpr::new(
-                self.rolls.len() as u8,
+                self.rolls.len() as u8 - self.mastery.dice,
                 self.thorns.as_ref().map(Vec::len).unwrap_or_default() as u8,
                 self.mastery,
             );

@@ -88,7 +88,7 @@ impl std::fmt::Display for Roll {
             Roll::Messy(_) => "Messy",
             Roll::Perfect(_) => "Perfect",
             Roll::Critical => "Critical!",
-            Roll::MultiCritical => "Multi critical! Take *spark*!",
+            Roll::MultiCritical => "Multi critical! Take spark!",
         }
         .fmt(f)
     }
@@ -113,7 +113,7 @@ pub fn roll_result(rolls: impl IntoIterator<Item = Roll>, mastery_dice: Dice) ->
             "roll"
         );
         // need to check at least two rolls to see if it's a multicrit
-        if any_mastery_crit && index != 0 && roll.is_perfect() {
+        if any_mastery_crit && !this_roll_mastery_crit && roll.is_perfect() {
             tracing::info!("Multi crit");
             current_max = Roll::MultiCritical;
             break;
@@ -302,6 +302,10 @@ mod tests {
             assert_eq!(roll_result(input, Dice::from(1)), expected);
         }
         let inputs = [
+            (
+                vec![Roll::Messy(5), Roll::Perfect(6)],
+                Roll::Critical,
+            ),
             (
                 vec![Roll::Perfect(6), Roll::Grim(1), Roll::Perfect(6)],
                 Roll::MultiCritical,
