@@ -72,6 +72,8 @@ pub async fn hello(ctx: Context<'_>) -> Result<(), Error> {
 pub async fn quickpool(
     ctx: Context<'_>,
     #[description = "Number of dice in the pool"] num_dice: Dice,
+    #[description = "Show the outcome of the roll of the dice in the pool, like for a power pool"]
+    show_outcome: Option<bool>,
 ) -> Result<(), Error> {
     info!("Got command: quickpool");
     let mut pool = Pool::new(num_dice);
@@ -79,7 +81,7 @@ pub async fn quickpool(
 
     let message = crate::commands::roll::RollOutcomeMessageBuilder::new(&rolls)
         .pool_remaining(pool.dice())
-        .hide_outcome(true)
+        .hide_outcome(!show_outcome.unwrap_or_default())
         .finish();
     ctx.send(message).await?;
     Ok(())
