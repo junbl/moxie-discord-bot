@@ -3,3 +3,5 @@
 Secrets*.toml
 .env
 .shuttle*
+
+*.profraw

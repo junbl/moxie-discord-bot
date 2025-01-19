@@ -4,16 +4,21 @@ use std::{borrow::Cow, future::ready};
 
 use itertools::Itertools;
 use poise::CreateReply;
-use serenity::futures::{future::Either, stream, Stream, StreamExt, TryStreamExt};
+use serenity::{
+    all::{ButtonStyle, CreateActionRow, CreateButton},
+    futures::{future::Either, stream, Stream, StreamExt, TryStreamExt},
+};
+use strum::{EnumString, IntoStaticStr};
 use tracing::{info, instrument};
 
 use crate::{
     commands::{
-        roll::{handle_buttons, Dice, RollOutcomeMessageBuilder, Thorns},
-        Scope,
+        handle_buttons,
+        roll::{Dice, PoolRollButtonAction, RollOutcomeMessageBuilder, Thorns},
+        ButtonAction, Scope,
     },
     error::MoxieError,
-    pools_in_database::PoolInDb,
+    pools_in_database::{PoolId, PoolInDb},
     rolls::{Pool, Roll, Thorn},
     Context, Error,
 };
@@ -179,14 +184,79 @@ pub async fn new(
     #[description = "Name of the pool"] name: String,
     #[description = "Storage location - channel or server, default channel"] scope: Option<Scope>,
 ) -> Result<(), Error> {
-    info!("Received command: new");
+    info!("Received command: pool new");
     let message = format!("Created new pool `{name}` with {num_dice}!");
-    ctx.data()
+    let pool_id = ctx
+        .data()
         .pools
         .create(scope_or_default(scope, &ctx), name, num_dice)
         .await?;
-    ctx.say(message).await?;
+
+    let components = vec![CreateActionRow::Buttons(vec![CreateButton::new(
+        PoolNewButtonInteraction::new(PoolNewButtonAction::Roll, pool_id),
+    )
+    .label(PoolNewButtonAction::Roll)
+    .style(ButtonStyle::Primary)])];
+
+    let reply = CreateReply::default()
+        .content(message)
+        .components(components);
+    ctx.send(reply).await?;
     Ok(())
+}
+struct PoolNewButtonInteraction {
+    action: PoolNewButtonAction,
+    pool_id: PoolId,
+}
+impl PoolNewButtonInteraction {
+    pub fn new(action: PoolNewButtonAction, pool: PoolId) -> Self {
+        Self {
+            action,
+            pool_id: pool,
+        }
+    }
+}
+impl std::str::FromStr for PoolNewButtonInteraction {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (action, pool_id) = s
+            .split_once('/')
+            .ok_or_else(|| format!("Failed to parse input (no `/`): {s}"))?;
+        let action = action.parse()?;
+        let pool_id = pool_id.parse()?;
+
+        Ok(Self { action, pool_id })
+    }
+}
+impl std::fmt::Display for PoolNewButtonInteraction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let action: &str = (&self.action).into();
+        let id = &self.pool_id;
+        write!(f, "{action}/{id}")
+    }
+}
+impl From<PoolNewButtonInteraction> for String {
+    fn from(pbi: PoolNewButtonInteraction) -> Self {
+        pbi.to_string()
+    }
+}
+#[derive(Debug, EnumString, IntoStaticStr)]
+enum PoolNewButtonAction {
+    #[strum(serialize = "r")]
+    Roll,
+}
+impl From<PoolNewButtonAction> for String {
+    fn from(value: PoolNewButtonAction) -> Self {
+        format!("{value:?}")
+    }
+}
+impl ButtonAction for PoolNewButtonAction {
+    async fn handle(self, ctx: &Context<'_>, pool: &mut PoolInDb) -> Result<CreateReply, Error> {
+        match self {
+            PoolNewButtonAction::Roll => roll_inner(ctx, pool, None, None, None, None).await,
+        }
+    }
 }
 
 /// Rolls a pool.
@@ -216,7 +286,7 @@ pub async fn roll(
         only_roll_some,
     )
     .await?;
-    send_pool_roll_message(&ctx, message, &pool).await?;
+    send_pool_roll_message(&ctx, message, &mut pool).await?;
     Ok(())
 }
 async fn roll_inner(
@@ -254,12 +324,12 @@ async fn roll_inner(
 pub async fn send_pool_roll_message(
     ctx: &Context<'_>,
     message: CreateReply,
-    pool: &PoolInDb,
+    pool: &mut PoolInDb,
 ) -> Result<(), Error> {
-    let needs_to_handle_buttons = super::roll::needs_to_handle_buttons(&message);
+    let needs_to_handle_buttons = super::needs_to_handle_buttons(&message);
     ctx.send(message).await?;
     if needs_to_handle_buttons {
-        handle_buttons(ctx, pool).await
+        handle_buttons::<PoolRollButtonAction>(ctx, pool).await
     } else {
         Ok(())
     }
@@ -519,7 +589,7 @@ pub async fn droproll(
         roll_message.content.as_deref().unwrap_or_default()
     );
     let message = roll_message.content(message);
-    send_pool_roll_message(&ctx, message, &pool).await?;
+    send_pool_roll_message(&ctx, message, &mut pool).await?;
     Ok(())
 }
 /// The type for the `num_dice` argument of the [`set`] command.
