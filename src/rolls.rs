@@ -235,17 +235,18 @@ impl Pool {
     pub fn set_dice(&mut self, new_dice: Dice) {
         self.dice = new_dice;
     }
-    pub fn roll(&mut self, rolls: &RollDistribution) -> Vec<Roll> {
+    pub fn roll(&mut self, rolls: &RollDistribution, only_roll_some: Option<Dice>) -> Vec<Roll> {
         let mut rng = thread_rng();
-        self.roll_rng(&mut rng, rolls)
+        self.roll_rng(&mut rng, rolls, only_roll_some)
     }
     pub fn roll_rng<R: Rng + ?Sized>(
         &mut self,
         rng: &mut R,
         rolls: &RollDistribution,
+        only_roll_some: Option<Dice>,
     ) -> Vec<Roll> {
         let rolls: Vec<_> = rolls
-            .roll_n(rng, self.dice)
+            .roll_n(rng, only_roll_some.unwrap_or(self.dice))
             .inspect(|roll| {
                 if roll.is_grim() {
                     self.dice -= 1;

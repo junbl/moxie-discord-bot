@@ -124,8 +124,9 @@ impl PoolInDb {
         &mut self,
         conn: &DatabaseConnection,
         rolls: &RollDistribution,
+        only_roll_some: Option<Dice>,
     ) -> Result<Vec<Roll>, anyhow::Error> {
-        let rolls = self.pool.roll(rolls);
+        let rolls = self.pool.roll(rolls, only_roll_some);
         match_pool_id!(self.id, |id| async move {
             ActiveModel {
                 id: Unchanged(id),

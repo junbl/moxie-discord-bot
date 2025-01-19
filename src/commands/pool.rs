@@ -203,10 +203,19 @@ pub async fn roll(
     #[description = "Number of thorns to add to potentially cut the outcome of a pool. Enables show_outcome."]
     thorns: Option<Thorns>,
     #[description = "Roll this pool with potency. Enables show_outcome."] potency: Option<bool>,
+    #[description = "Only roll some dice from the pool"] only_roll_some: Option<Dice>,
 ) -> Result<(), Error> {
     info!("Received command: roll");
     let mut pool = get_pool_try_all_scopes(&ctx, &pool_name, scope).await?;
-    let message = roll_inner(&ctx, &mut pool, show_outcome, thorns, potency).await?;
+    let message = roll_inner(
+        &ctx,
+        &mut pool,
+        show_outcome,
+        thorns,
+        potency,
+        only_roll_some,
+    )
+    .await?;
     send_pool_roll_message(&ctx, message, &pool).await?;
     Ok(())
 }
@@ -216,9 +225,14 @@ async fn roll_inner(
     show_outcome: Option<bool>,
     thorns: Option<Thorns>,
     potency: Option<bool>,
+    only_roll_some: Option<Dice>,
 ) -> Result<CreateReply, Error> {
     let rolls = pool
-        .roll(ctx.data().pools.conn(), &ctx.data().roll_dist)
+        .roll(
+            ctx.data().pools.conn(),
+            &ctx.data().roll_dist,
+            only_roll_some,
+        )
         .await?;
     let show_outcome = thorns.is_some() || show_outcome.unwrap_or_default();
 
@@ -478,6 +492,7 @@ pub async fn droproll(
     #[description = "Number of thorns to add to potentially cut the outcome of a pool. Enables show_outcome."]
     thorns: Option<Thorns>,
     #[description = "Roll this pool with potency. Enables show_outcome."] potency: Option<bool>,
+    #[description = "Only roll some dice from the pool"] only_roll_some: Option<Dice>,
 ) -> Result<(), Error> {
     let (mut pool, message) = set_inner(
         ctx,
@@ -486,7 +501,15 @@ pub async fn droproll(
         scope,
     )
     .await?;
-    let roll_message = roll_inner(&ctx, &mut pool, show_outcome, thorns, potency).await?;
+    let roll_message = roll_inner(
+        &ctx,
+        &mut pool,
+        show_outcome,
+        thorns,
+        potency,
+        only_roll_some,
+    )
+    .await?;
     let message = format!(
         "{message}\n{}",
         roll_message.content.as_deref().unwrap_or_default()
