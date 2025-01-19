@@ -39,7 +39,7 @@ async fn query(
 
 async fn query_with_opt_challenge(
     select: Select<suspense::Entity>,
-    challenge: &Option<String>,
+    challenge: Option<&str>,
     ctx: &Context<'_>,
 ) -> Result<Option<suspense::Model>, sea_orm::DbErr> {
     let condition = Condition::all();
@@ -75,7 +75,7 @@ async fn set_inner(
     suspense: SetValue,
 ) -> Result<String, Error> {
     let (current_suspense, suspense_value) =
-        query_with_opt_challenge(suspense::Entity::find(), &challenge, &ctx)
+        query_with_opt_challenge(suspense::Entity::find(), challenge.as_deref(), &ctx)
             .await?
             .map_or_else(
                 || {
@@ -182,35 +182,69 @@ pub async fn check(ctx: Context<'_>) -> Result<(), Error> {
     info!("Received command: suspense check");
     let suspenses = query(suspense::Entity::find(), &ctx).await?;
     let single_suspense_message = |suspense| format!("# Suspense: `{suspense}`");
+    let global_message = "(Global)";
+    let multi_suspense_message = |suspenses: Vec<suspense::Model>| {
+        let max_name_length = suspenses
+            .iter()
+            .filter_map(|s| s.challenge.as_ref().map(|c| c.len()))
+            .max()
+            .unwrap_or(global_message.len());
+        let width = (max_name_length + 3).max(8);
+        let mut total_suspense = 0;
+        let message = suspenses
+            .into_iter()
+            .filter(|s| s.challenge.is_none() || s.suspense > 0)
+            .map(|suspense| {
+                total_suspense += suspense.suspense;
+                format!(
+                    "{:width$}{}",
+                    suspense.challenge.map_or(global_message.into(), Cow::Owned),
+                    suspense.suspense,
+                )
+            })
+            .join("\n");
+        format!("# Total Suspense: `{total_suspense}`\n```{message}```")
+    };
     let message = if suspenses.is_empty() {
         single_suspense_message(0)
     } else {
         match <[suspense::Model; 1]>::try_from(suspenses) {
-            Ok([suspense]) => single_suspense_message(suspense.suspense),
-            Err(suspenses) => {
-                let max_name_length = suspenses
-                    .iter()
-                    .filter_map(|s| s.challenge.as_ref().map(|c| c.len()))
-                    .max()
-                    .unwrap_or_default();
-                let width = (max_name_length + 3).max(8);
-                let mut total_suspense = 0;
-                let message = suspenses
-                    .into_iter()
-                    .filter(|s| s.challenge.is_none() || s.suspense > 0)
-                    .map(|suspense| {
-                        total_suspense += suspense.suspense;
-                        format!(
-                            "{:width$}{}",
-                            suspense.challenge.map_or("(Global)".into(), Cow::Owned),
-                            suspense.suspense,
-                        )
-                    })
-                    .join("\n");
-                format!("# Total Suspense: `{total_suspense}`\n```{message}```")
+            Ok([suspense]) if suspense.challenge.is_none() => {
+                single_suspense_message(suspense.suspense)
             }
+            Ok([suspense]) => {
+                let fake_global_suspense = suspense::Model {
+                    suspense: 0,
+                    challenge: None,
+                    ..suspense.clone()
+                };
+                let suspenses = vec![suspense, fake_global_suspense];
+                multi_suspense_message(suspenses)
+            }
+            Err(suspenses) => multi_suspense_message(suspenses),
         }
     };
+    ctx.say(message).await?;
+    Ok(())
+}
+
+/// Delete a suspense entry for a challenge.
+#[poise::command(prefix_command, slash_command)]
+#[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
+pub async fn delete(
+    ctx: Context<'_>,
+    #[description = "The name of a challenge to delete"]
+    #[autocomplete = "autocomplete_challenge_name"]
+    challenge: String,
+) -> Result<(), Error> {
+    info!(challenge, "Received command: suspense delete");
+    let suspense = query_with_opt_challenge(suspense::Entity::find(), Some(&challenge), &ctx)
+        .await?
+        .ok_or_else(|| format!("Challenge not found: {challenge}"))?;
+    suspense::Entity::delete_by_id(suspense.id)
+        .exec(ctx.data().pools.conn())
+        .await?;
+    let message = format!("Deleted suspense entry for challenge `{challenge}`");
     ctx.say(message).await?;
     Ok(())
 }
