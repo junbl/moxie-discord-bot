@@ -219,7 +219,8 @@ pub async fn roll(
     #[description = "Number of thorns to add to potentially cut the outcome of a pool. Enables show_outcome."]
     thorns: Option<Thorns>,
     #[description = "Roll this pool with potency. Enables show_outcome."] potency: Option<bool>,
-    #[description = "Only roll some dice from the pool"] only_roll_some: Option<Dice>,
+    #[description = "Only roll some dice from the pool. Enables show_outcome."]
+    only_roll_some: Option<Dice>,
 ) -> Result<(), Error> {
     info!("Received command: roll");
     let mut pool = get_pool_try_all_scopes(&ctx, &pool_name, scope).await?;
@@ -251,7 +252,10 @@ pub async fn roll_inner(
             only_roll_some,
         )
         .await?;
-    let show_outcome = thorns.is_some() || show_outcome.unwrap_or_default();
+    let show_outcome = thorns.is_some()
+        || potency.is_some_and(std::convert::identity)
+        || only_roll_some.is_some()
+        || show_outcome.unwrap_or_default();
 
     let thorns = thorns.map(|thorns| {
         let mut rng = rand::thread_rng();
