@@ -187,10 +187,9 @@ pub async fn check(ctx: Context<'_>) -> Result<(), Error> {
         let max_name_length = suspenses
             .iter()
             .filter_map(|s| s.challenge.as_ref().map(|c| c.len()))
-            .chain(std::iter::once(global_message.len()))
             .max()
             .unwrap_or_default();
-        let width = (max_name_length + 3).max(8);
+        let width = (max_name_length).max(global_message.len()) + 3;
         let mut total_suspense = 0;
         let message = suspenses
             .into_iter()
