@@ -2,7 +2,7 @@
 
 use anyhow::anyhow;
 use entity::{channel_pool, server_pool};
-use sea_orm::ActiveValue::{Set, Unchanged};
+use sea_orm::ActiveValue::{NotSet, Set, Unchanged};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use sea_orm::{DatabaseConnection, QuerySelect};
 use serenity::futures::{Stream, TryFutureExt, TryStreamExt};
@@ -124,8 +124,9 @@ impl PoolInDb {
         &mut self,
         conn: &DatabaseConnection,
         rolls: &RollDistribution,
+        only_roll_some: Option<Dice>,
     ) -> Result<Vec<Roll>, anyhow::Error> {
-        let rolls = self.pool.roll(rolls);
+        let rolls = self.pool.roll(rolls, only_roll_some);
         match_pool_id!(self.id, |id| async move {
             ActiveModel {
                 id: Unchanged(id),
@@ -212,12 +213,12 @@ impl Pools {
         scope: Scope,
         pool_name: String,
         pool_size: Dice,
-    ) -> Result<(), Error> {
+    ) -> Result<PoolInDb, Error> {
         if self.get(scope, &pool_name).await.is_ok() {
             Err(anyhow!("Pool `{pool_name}` already exists!").into())
         } else {
             let pool_size = pool_size.dice as i16;
-            match scope {
+            let new_pool = match scope {
                 Scope::Server(server_id) => {
                     let new_pool = server_pool::ActiveModel {
                         server_id: Set(server_id.get() as i64),
@@ -226,7 +227,8 @@ impl Pools {
                         current_size: Set(pool_size),
                         ..Default::default()
                     };
-                    new_pool.insert(&self.conn).await?;
+                    let new_pool = new_pool.insert(&self.conn).await?;
+                    new_pool.into()
                 }
                 Scope::Channel(channel_id) => {
                     let new_pool = channel_pool::ActiveModel {
@@ -236,10 +238,11 @@ impl Pools {
                         current_size: Set(pool_size),
                         ..Default::default()
                     };
-                    new_pool.insert(&self.conn).await?;
+                    let new_pool = new_pool.insert(&self.conn).await?;
+                    new_pool.into()
                 }
             };
-            Ok(())
+            Ok(new_pool)
         }
     }
     pub async fn delete(&self, scope: Scope, pool_name: &str) -> Result<Pool, Error> {
@@ -275,6 +278,32 @@ impl Pools {
         }
         .update(&self.conn)
         .map_ok(|_| ()))?;
+        Ok(new_size)
+    }
+    pub async fn set_max(
+        &self,
+        pool: &mut PoolInDb,
+        num_dice: SetValue,
+        reset: bool,
+    ) -> Result<Dice, Error> {
+        let new_size = num_dice.apply(pool.pool.dice());
+        let mut current_size = NotSet;
+
+        if reset {
+            pool.pool.set_dice(new_size);
+            current_size = Set(new_size.dice as i16);
+        }
+
+        match_pool_id!(pool.id, |id| ActiveModel {
+            id: Unchanged(id),
+            current_size,
+            original_size: Set(new_size.dice as i16),
+            updated: Set(chrono::Utc::now()),
+            ..Default::default()
+        }
+        .update(&self.conn)
+        .map_ok(|_| ()))?;
+
         Ok(new_size)
     }
     pub async fn reset(&self, scope: Scope, pool_name: &str) -> Result<Dice, Error> {

@@ -3,32 +3,39 @@ use nom::error::Error as NomError;
 use nom::Finish;
 use poise::CreateReply;
 use rand::thread_rng;
-use serenity::all::{
-    ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateButton,
-    CreateInteractionResponseMessage,
-};
+use serenity::all::{ButtonStyle, CreateActionRow, CreateButton};
 use std::fmt::Write;
+use std::str::FromStr;
 use strum::{EnumString, IntoStaticStr};
+use tracing::instrument;
 
 use crate::commands::pool::{rolls_str, thorns_str};
+use crate::commands::ButtonInteraction;
 use crate::pools_in_database::{PoolId, PoolInDb};
 use crate::rolls::{
     replace_rolls, roll_replacements, roll_result, Roll, RollDistribution, Thorn, ThornDistribution,
 };
 use crate::{write_s, Context, Error};
 
-use super::pool::{delete_message, reset_message};
+use super::pool::{delete_message, reset_message, roll_inner};
+use super::ButtonAction;
 
+/// An expression representing a roll of the dice.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct RollExpr {
+    /// The number of six-sided dice to be rolled.
     dice: Dice,
+    /// The number of eight-sided thorns to be rolled.
     thorns: Thorns,
+    /// The number of mastery dice to add (as in the fighter's core talent).
+    mastery: Dice,
 }
 impl RollExpr {
-    fn new(dice: impl Into<Dice>, thorns: impl Into<Thorns>) -> Self {
+    fn new(dice: impl Into<Dice>, thorns: impl Into<Thorns>, mastery: impl Into<Dice>) -> Self {
         Self {
             dice: dice.into(),
             thorns: thorns.into(),
+            mastery: mastery.into(),
         }
     }
     fn roll(
@@ -37,12 +44,22 @@ impl RollExpr {
         thorn_dist: &ThornDistribution,
     ) -> (Vec<Roll>, Vec<Thorn>) {
         let mut rng = thread_rng();
-        let rolls = roll_dist.roll_n(&mut rng, self.dice).collect();
+        let rolls = roll_dist
+            .roll_n(&mut rng, self.dice + self.mastery)
+            .collect();
         let thorns = thorn_dist.roll_n(&mut rng, self.thorns).collect();
         (rolls, thorns)
     }
+    fn is_empty(&self) -> bool {
+        let Self {
+            dice,
+            thorns,
+            mastery,
+        } = self;
+        dice.is_empty() && thorns.is_empty() && mastery.is_empty()
+    }
 }
-impl std::str::FromStr for RollExpr {
+impl FromStr for RollExpr {
     type Err = NomError<String>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -57,9 +74,14 @@ impl std::str::FromStr for RollExpr {
 }
 impl std::fmt::Display for RollExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.dice)?;
-        if !self.thorns.is_empty() {
-            write!(f, "{}", self.thorns)?;
+        let Self {
+            dice,
+            thorns,
+            mastery,
+        } = self;
+        write!(f, "{}", *dice + *mastery)?;
+        if !thorns.is_empty() {
+            write!(f, "{}", thorns)?;
         }
         Ok(())
     }
@@ -68,13 +90,15 @@ impl std::fmt::Display for RollExpr {
 /// Represents a number of dice.
 ///
 /// Comes with logic for parsing and formatting.
-#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, PartialOrd, serde::Deserialize, serde::Serialize,
+)]
 #[serde(transparent)]
 pub struct Dice {
     pub dice: u8,
 }
 impl Dice {
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.dice == 0
     }
 }
@@ -83,7 +107,12 @@ impl From<u8> for Dice {
         Dice { dice }
     }
 }
-impl std::str::FromStr for Dice {
+impl From<Dice> for usize {
+    fn from(dice: Dice) -> usize {
+        dice.dice.into()
+    }
+}
+impl FromStr for Dice {
     type Err = NomError<String>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -121,6 +150,16 @@ impl std::ops::Sub for Dice {
         Dice::from(self.dice.saturating_sub(rhs.dice))
     }
 }
+impl std::ops::AddAssign for Dice {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
+    }
+}
+impl std::ops::SubAssign for Dice {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = *self - rhs;
+    }
+}
 impl std::ops::SubAssign<u8> for Dice {
     fn sub_assign(&mut self, rhs: u8) {
         *self = *self - Dice::from(rhs);
@@ -146,7 +185,7 @@ impl From<u8> for Thorns {
         Thorns { thorns }
     }
 }
-impl std::str::FromStr for Thorns {
+impl FromStr for Thorns {
     type Err = NomError<String>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -167,10 +206,11 @@ impl std::fmt::Display for Thorns {
 }
 mod parse {
     use super::{Dice, RollExpr, Thorns};
+    use nom::branch::permutation;
     use nom::bytes::complete::tag;
     use nom::character::complete::{multispace0, u8};
     use nom::combinator::{all_consuming, opt};
-    use nom::sequence::{delimited, preceded, terminated, tuple};
+    use nom::sequence::{delimited, pair, preceded, terminated};
     use nom::IResult;
 
     pub fn parse_dice_expression(dice_expr: &str) -> IResult<&str, Dice> {
@@ -188,19 +228,23 @@ mod parse {
         Ok((remaining, Thorns { thorns }))
     }
     pub fn parse_roll_expression(roll_expr: &str) -> IResult<&str, RollExpr> {
-        let (remaining, (dice, thorns)) = all_consuming(tuple((
-            terminated(
-                opt(terminated(u8, tag("d"))),
-                delimited(multispace0, opt(tag("+")), multispace0),
-            ),
-            opt(terminated(u8, tag("t"))),
-        )))(roll_expr)?;
+        let optional_plus_before =
+            |p| preceded(delimited(multispace0, opt(tag("+")), multispace0), p);
+        assert!(optional_plus_before(opt(terminated(u8, tag("m"))))("").is_ok());
+        let (remaining, (dice, (thorns, mastery))) = all_consuming(pair(
+            opt(terminated(u8, tag("d"))),
+            permutation((
+                optional_plus_before(opt(terminated(u8, tag("t")))),
+                optional_plus_before(opt(terminated(u8, tag("m")))),
+            )),
+        ))(roll_expr.trim())?;
         Ok((
             remaining,
-            RollExpr {
-                dice: Dice::from(dice.unwrap_or_default()),
-                thorns: Thorns::from(thorns.unwrap_or_default()),
-            },
+            RollExpr::new(
+                dice.unwrap_or_default(),
+                thorns.unwrap_or_default(),
+                mastery.unwrap_or_default(),
+            ),
         ))
     }
     #[cfg(test)]
@@ -210,16 +254,20 @@ mod parse {
         #[test]
         fn parse_roll_expressions() {
             let good = [
-                ("1d", RollExpr::new(1, 0)),
-                ("1d2t", RollExpr::new(1, 2)),
-                ("1d 2t", RollExpr::new(1, 2)),
-                ("1d    \n\t   2t", RollExpr::new(1, 2)),
-                ("1d+2t", RollExpr::new(1, 2)),
-                ("1d + 2t", RollExpr::new(1, 2)),
-                ("2t", RollExpr::new(0, 2)),
-                ("100d255t", RollExpr::new(100, 255)),
-                ("0d0t", RollExpr::new(0, 0)),
-                ("", RollExpr::new(0, 0)),
+                ("1d", RollExpr::new(1, 0, 0)),
+                ("1d2t", RollExpr::new(1, 2, 0)),
+                ("1d 2t", RollExpr::new(1, 2, 0)),
+                ("1d    \n\t   2t", RollExpr::new(1, 2, 0)),
+                ("1d+2t", RollExpr::new(1, 2, 0)),
+                ("1d + 2t", RollExpr::new(1, 2, 0)),
+                ("2t", RollExpr::new(0, 2, 0)),
+                ("100d255t", RollExpr::new(100, 255, 0)),
+                ("0d0t", RollExpr::new(0, 0, 0)),
+                ("0d0t0m", RollExpr::new(0, 0, 0)),
+                ("1d2t3m", RollExpr::new(1, 2, 3)),
+                ("1d3m2t", RollExpr::new(1, 2, 3)),
+                ("3m1d2t", RollExpr::new(1, 2, 3)),
+                ("", RollExpr::new(0, 0, 0)),
             ];
             for (input, expected) in good {
                 assert_eq!(input.parse::<RollExpr>().unwrap(), expected);
@@ -279,39 +327,48 @@ mod parse {
 /// Use an expression like `/roll 3d2t`.
 #[poise::command(slash_command, prefix_command)]
 #[allow(clippy::too_many_arguments)]
+#[instrument(skip(ctx), fields(channel=?ctx.channel_id(), user=ctx.author().name))]
 pub async fn roll(
     ctx: Context<'_>,
     #[description = "A roll expression, like `2d` or `3d1t`"] mut dice: RollExpr,
-    #[description = "One of your dice will crit on a 6. Does not add +1d."] mastery: Option<bool>,
-    #[description = "One of your dice will crit on a 6. Adds +1d."] mastery_plus_1d: Option<bool>,
-    #[description = "Treats rolls of 5 as 6"] fives_count_as_sixes: Option<bool>,
-    #[description = "Treats rolls of 4 as 1"] fours_count_as_ones: Option<bool>,
-    #[description = "Treats 5s as 6s and 4s as 1s (same as the individual options)"] wild: Option<
-        bool,
-    >,
-    #[description = "Prints out the given name with the roll to show what this roll is for."] name: Option<String>,
-    #[description = "Prints out that this was rolled with potency. Does not modify the roll."]
-    potency: Option<bool>,
+    #[description = "One of your dice will crit on a 6. Does not add 1d."] mastery: Option<bool>,
+    #[description = "The first n dice of your roll are mastery dice"] mastery_dice: Option<Dice>,
+    #[description = "Adds the specified number of mastery dice to your roll"]
+    plus_mastery_dice: Option<Dice>,
+    #[description = "Treats 5s as 6s and 4s as 1s"] wild: Option<bool>,
+    #[description = "Prints out the given name with the roll to show what this roll is for"]
+    name: Option<String>,
+    #[description = "Prints out that this was rolled with potency"] potency: Option<bool>,
 ) -> Result<(), Error> {
-    let mastery_plus_1d = mastery_plus_1d.unwrap_or_default();
-    if mastery_plus_1d {
-        dice.dice += 1;
+    // update the mastery dice in the roll expression
+    let replace_with_mastery_dice = mastery_dice
+        .or(mastery.map(|m| Dice::from(if m { 1 } else { 0 })))
+        .unwrap_or_default();
+    if replace_with_mastery_dice > dice.dice {
+        return Err(format!(
+            "Got request to treat more dice as mastery dice than were in the pool: \
+                `{replace_with_mastery_dice}` > `{d}`\nDid you mean to use `plus_mastery_dice`?",
+            d = dice.dice,
+        )
+        .into());
     }
+    dice.dice -= replace_with_mastery_dice;
+    dice.mastery += replace_with_mastery_dice;
+    dice.mastery += plus_mastery_dice.unwrap_or_default();
+
+    if dice.is_empty() {
+        return Err("*a lonely wind gusts across an empty table*".into());
+    }
+
+    tracing::info!(rollexpr=?dice, "rolling");
     let (rolls, thorns) = dice.roll(&ctx.data().roll_dist, &ctx.data().thorn_dist);
 
-    let mastery = mastery.unwrap_or_default() || mastery_plus_1d;
     let wild = wild.unwrap_or_default();
-    let fives_count_as_sixes = wild || fives_count_as_sixes.unwrap_or_default();
-    let fours_count_as_ones = wild || fours_count_as_ones.unwrap_or_default();
-
-    let rolls = replace_rolls(
-        rolls,
-        &roll_replacements(fives_count_as_sixes, fours_count_as_ones),
-    );
+    let rolls = replace_rolls(rolls, &roll_replacements(wild, wild));
     let message = RollOutcomeMessageBuilder::new(&rolls)
         .username(&ctx)
         .thorns(thorns)
-        .mastery(mastery)
+        .mastery(dice.mastery)
         .roll_name(name)
         .potency(potency.unwrap_or_default())
         .finish();
@@ -330,13 +387,15 @@ pub struct RollOutcomeMessageBuilder<'a> {
     user_id: Option<serenity::all::UserId>,
     #[setters(into)]
     thorns: Option<Vec<Thorn>>,
-    mastery: bool,
+    mastery: Dice,
     #[setters(into)]
     roll_name: Option<String>,
     #[setters(into)]
     pool_name: Option<String>,
     #[setters(into)]
     pool_remaining: Option<Dice>,
+    #[setters(into)]
+    pool_size_pre_roll: Option<Dice>,
     #[setters(into)]
     pool_buttons: Option<PoolId>,
     potency: bool,
@@ -371,8 +430,9 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
             write_s!(message, " pool `{pool_name}`");
         } else {
             let roll_expr = RollExpr::new(
-                self.rolls.len() as u8,
+                self.rolls.len() as u8 - self.mastery.dice,
                 self.thorns.as_ref().map(Vec::len).unwrap_or_default() as u8,
+                self.mastery,
             );
             write_s!(message, " `{roll_expr}`");
         }
@@ -404,7 +464,8 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
             write_s!(
                 message,
                 "\n### `{}` → `{}`",
-                Dice::from(self.rolls.len() as u8),
+                self.pool_size_pre_roll
+                    .unwrap_or(Dice::from(self.rolls.len() as u8)),
                 pool_remaining,
             );
 
@@ -414,17 +475,17 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
                     components
                         .get_or_insert_with(Vec::new)
                         .push(CreateActionRow::Buttons(vec![
-                            CreateButton::new(PoolButtonInteraction::new(
-                                ButtonAction::Delete,
+                            CreateButton::new(ButtonInteraction::new(
+                                PoolButtonAction::Delete,
                                 pool,
                             ))
-                            .label(ButtonAction::Delete)
+                            .label(PoolButtonAction::Delete)
                             .style(ButtonStyle::Danger),
-                            CreateButton::new(PoolButtonInteraction::new(
-                                ButtonAction::Reset,
+                            CreateButton::new(ButtonInteraction::new(
+                                PoolButtonAction::Reset,
                                 pool,
                             ))
-                            .label(ButtonAction::Reset)
+                            .label(PoolButtonAction::Reset)
                             .style(ButtonStyle::Primary),
                         ]));
                 }
@@ -448,103 +509,35 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
     }
 }
 
-struct PoolButtonInteraction {
-    action: ButtonAction,
-    pool_id: PoolId,
-}
-impl PoolButtonInteraction {
-    pub fn new(action: ButtonAction, pool: PoolId) -> Self {
-        Self {
-            action,
-            pool_id: pool,
-        }
-    }
-}
-impl std::str::FromStr for PoolButtonInteraction {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (action, pool_id) = s
-            .split_once('/')
-            .ok_or_else(|| format!("Failed to parse input (no `/`): {s}"))?;
-        let action = action.parse()?;
-        let pool_id = pool_id.parse()?;
-
-        Ok(Self { action, pool_id })
-    }
-}
-impl std::fmt::Display for PoolButtonInteraction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let action: &str = (&self.action).into();
-        let id = &self.pool_id;
-        write!(f, "{action}/{id}")
-    }
-}
-impl From<PoolButtonInteraction> for String {
-    fn from(pbi: PoolButtonInteraction) -> Self {
-        pbi.to_string()
-    }
-}
 #[derive(Debug, EnumString, IntoStaticStr)]
-enum ButtonAction {
+pub enum PoolButtonAction {
     #[strum(serialize = "d")]
     Delete,
     #[strum(serialize = "r")]
     Reset,
+    #[strum(serialize = "o")]
+    Roll,
 }
-impl From<ButtonAction> for String {
-    fn from(value: ButtonAction) -> Self {
+impl From<PoolButtonAction> for String {
+    fn from(value: PoolButtonAction) -> Self {
         format!("{value:?}")
     }
 }
-
-pub fn needs_to_handle_buttons(reply: &CreateReply) -> bool {
-    reply
-        .components
-        .as_ref()
-        .is_some_and(|components| !components.is_empty())
-}
-
-pub async fn handle_buttons(ctx: &Context<'_>, pool: &PoolInDb) -> Result<(), Error> {
-    ctx.defer().await?;
-    let pool_id = pool.id;
-    while let Some(mci) = ComponentInteractionCollector::new(ctx.serenity_context())
-        .timeout(std::time::Duration::from_secs(120))
-        .filter(move |mci| {
-            mci.data
-                .custom_id
-                .parse::<PoolButtonInteraction>()
-                .is_ok_and(|pbi| pbi.pool_id == pool_id)
-        })
-        .await
-    {
-        tracing::debug!(?mci, ctx_id = ctx.id(), "Got interaction");
+impl ButtonAction for PoolButtonAction {
+    async fn handle(self, ctx: &Context<'_>, pool: &mut PoolInDb) -> Result<CreateReply, Error> {
         let pools = &ctx.data().pools;
-
-        let message = match mci
-            .data
-            .custom_id
-            .parse::<PoolButtonInteraction>()
-            .expect("Custom ID parsed in filter")
-            .action
-        {
-            ButtonAction::Delete => {
+        match self {
+            PoolButtonAction::Delete => {
                 let deleted_pool = pool.delete(pools).await?;
-                delete_message(&pool.name, deleted_pool)
+                let message = delete_message(&pool.name, deleted_pool);
+                Ok(CreateReply::default().content(message))
             }
-            ButtonAction::Reset => {
+            PoolButtonAction::Reset => {
                 let num_dice = pool.reset(pools).await?;
-                reset_message(&pool.name, num_dice)
+                let message = reset_message(&pool.name, num_dice);
+                Ok(CreateReply::default().content(message))
             }
-        };
-        // mci.create_response(ctx, serenity::all::CreateInteractionResponse::Acknowledge)
-        mci.create_response(
-            ctx,
-            serenity::all::CreateInteractionResponse::Message(
-                CreateInteractionResponseMessage::new().content(message),
-            ),
-        )
-        .await?;
+            PoolButtonAction::Roll => roll_inner(ctx, pool, None, None, None, None).await,
+        }
     }
-    Ok(())
 }

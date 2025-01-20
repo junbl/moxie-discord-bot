@@ -1,15 +1,23 @@
 //! This module contains each of the commands that the bot supports.
-use std::future::ready;
+use std::{future::ready, str::FromStr};
 
+use poise::CreateReply;
 use roll::Dice;
 use serenity::{
-    all::{ArgumentConvert, CacheHttp, ChannelId, GuildId},
+    all::{
+        ArgumentConvert, CacheHttp, ChannelId, ComponentInteractionCollector,
+        CreateInteractionResponseMessage, GuildId,
+    },
     FutureExt,
 };
 use thiserror::Error;
 use tracing::info;
 
-use crate::{rolls::Pool, Context, Error};
+use crate::{
+    pools_in_database::{PoolId, PoolInDb},
+    rolls::Pool,
+    Context, Error,
+};
 pub mod pool;
 pub mod roll;
 pub mod suspense;
@@ -59,6 +67,109 @@ impl ArgumentConvert for Scope {
     }
 }
 
+/// A struct that defines a particular button clicked for a particular pool.
+///
+/// Note that any `B` should implement [`ButtonAction`] and have a unique serialization. This gets
+/// turned into a string "{action}/{pool}" which then gets parsed back into which button was
+/// pressed.
+struct ButtonInteraction<B> {
+    action: B,
+    pool_id: PoolId,
+}
+impl<B> ButtonInteraction<B> {
+    fn new(action: B, pool: PoolId) -> Self {
+        Self {
+            action,
+            pool_id: pool,
+        }
+    }
+}
+impl<B> FromStr for ButtonInteraction<B>
+where
+    B: FromStr,
+    B::Err: std::error::Error + Send + Sync + 'static,
+{
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (action, pool_id) = s
+            .split_once('/')
+            .ok_or_else(|| format!("Failed to parse input (no `/`): {s}"))?;
+        let action = action.parse()?;
+        let pool_id = pool_id.parse()?;
+
+        Ok(Self { action, pool_id })
+    }
+}
+impl<B> std::fmt::Display for ButtonInteraction<B>
+where
+    for<'a> &'a B: Into<&'static str>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let action: &str = (&self.action).into();
+        let id = &self.pool_id;
+        write!(f, "{action}/{id}")
+    }
+}
+impl<B> From<ButtonInteraction<B>> for String
+where
+    for<'a> &'a B: Into<&'static str>,
+{
+    fn from(pbi: ButtonInteraction<B>) -> Self {
+        pbi.to_string()
+    }
+}
+
+pub fn needs_to_handle_buttons(reply: &poise::CreateReply) -> bool {
+    reply
+        .components
+        .as_ref()
+        .is_some_and(|components| !components.is_empty())
+}
+
+pub trait ButtonAction {
+    async fn handle(self, ctx: &Context<'_>, pool: &mut PoolInDb) -> Result<CreateReply, Error>;
+}
+pub async fn handle_buttons<B>(ctx: &Context<'_>, pool: &mut PoolInDb) -> Result<(), Error>
+where
+    B: ButtonAction + FromStr,
+    B::Err: std::error::Error + Send + Sync + 'static,
+{
+    ctx.defer().await?;
+    let pool_id = pool.id;
+    while let Some(mci) = ComponentInteractionCollector::new(ctx.serenity_context())
+        .timeout(std::time::Duration::from_secs(120))
+        .filter(move |mci| {
+            mci.data
+                .custom_id
+                .parse::<ButtonInteraction<B>>()
+                .is_ok_and(|pbi| pbi.pool_id == pool_id)
+        })
+        .await
+    {
+        tracing::debug!(?mci, ctx_id = ctx.id(), "Got interaction");
+
+        let action = mci
+            .data
+            .custom_id
+            .parse::<ButtonInteraction<B>>()
+            .expect("Custom ID parsed in filter")
+            .action;
+        let message = action.handle(ctx, pool).await?;
+        // mci.create_response(ctx, serenity::all::CreateInteractionResponse::Acknowledge)
+        mci.create_response(
+            ctx,
+            serenity::all::CreateInteractionResponse::Message(
+                CreateInteractionResponseMessage::new()
+                    .content(message.content.unwrap_or_default())
+                    .components(message.components.unwrap_or_default()),
+            ),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 /// Health check
 #[poise::command(slash_command)]
 pub async fn hello(ctx: Context<'_>) -> Result<(), Error> {
@@ -72,14 +183,16 @@ pub async fn hello(ctx: Context<'_>) -> Result<(), Error> {
 pub async fn quickpool(
     ctx: Context<'_>,
     #[description = "Number of dice in the pool"] num_dice: Dice,
+    #[description = "Show the outcome of the roll of the dice in the pool, like for a power pool"]
+    show_outcome: Option<bool>,
 ) -> Result<(), Error> {
     info!("Got command: quickpool");
     let mut pool = Pool::new(num_dice);
-    let rolls = pool.roll(&ctx.data().roll_dist);
+    let rolls = pool.roll(&ctx.data().roll_dist, None);
 
     let message = crate::commands::roll::RollOutcomeMessageBuilder::new(&rolls)
         .pool_remaining(pool.dice())
-        .hide_outcome(true)
+        .hide_outcome(!show_outcome.unwrap_or_default())
         .finish();
     ctx.send(message).await?;
     Ok(())
