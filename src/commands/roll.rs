@@ -395,6 +395,8 @@ pub struct RollOutcomeMessageBuilder<'a> {
     #[setters(into)]
     pool_remaining: Option<Dice>,
     #[setters(into)]
+    pool_size_pre_roll: Option<Dice>,
+    #[setters(into)]
     pool_buttons: Option<PoolId>,
     potency: bool,
     hide_outcome: bool,
@@ -462,7 +464,8 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
             write_s!(
                 message,
                 "\n### `{}` → `{}`",
-                Dice::from(self.rolls.len() as u8),
+                self.pool_size_pre_roll
+                    .unwrap_or(Dice::from(self.rolls.len() as u8)),
                 pool_remaining,
             );
 
