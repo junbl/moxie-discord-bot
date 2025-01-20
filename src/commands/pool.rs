@@ -243,6 +243,7 @@ pub async fn roll_inner(
     potency: Option<bool>,
     only_roll_some: Option<Dice>,
 ) -> Result<CreateReply, Error> {
+    let pre_roll_size = pool.pool.dice();
     let rolls = pool
         .roll(
             ctx.data().pools.conn(),
@@ -259,11 +260,11 @@ pub async fn roll_inner(
     let pool_result_msg = RollOutcomeMessageBuilder::new(&rolls)
         .username(ctx)
         .pool(pool)
+        .pool_size_pre_roll(pre_roll_size)
         .hide_outcome(!show_outcome)
         .thorns(thorns)
-        .potency(potency.unwrap_or_default())
-        .finish();
-    Ok(pool_result_msg)
+        .potency(potency.unwrap_or_default());
+    Ok(pool_result_msg.finish())
 }
 
 /// Sends the given message, handling any interactions if necessary.
@@ -482,7 +483,7 @@ async fn check_inner(
         .get(scope_or_default(scope, &ctx), &pool_name)
         .await?;
     ctx.say(format!(
-        "Pool `{pool_name}` currently has `{}`/{} remaining!",
+        "Pool `{pool_name}` currently has `{}`/`{}` remaining!",
         pool.pool.dice(),
         pool.original_size(),
     ))

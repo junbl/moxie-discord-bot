@@ -24,7 +24,7 @@ The `pool` command lets you create and manage persistent diminishing pools.
 You can start a persistent pool like this:
 
 ```
-/pool 6 Ritual
+/pool new 6 Ritual
 ```
 
 and then roll it like:
@@ -84,7 +84,9 @@ Checks how many dice are currently in the pool without rolling it.
 
 
 ### Contribution
-Contributions are always welcome, no matter your skill level! Check out the Oddity Press Discord for discussion of this bot and other community tools.
+Contributions are always welcome, no matter your skill level! Check out the Oddity Press Discord for discussion of this bot and other community tools and help getting started.
+
+Feature requests are also very appreciated. Open an issue on this repository or bring up your suggestion on Discord! It's super helpful if you include information about why a particular feature is useful to you and how you're thinking it would work from a user's point of view.
 
 #### Past problems
 
@@ -92,4 +94,4 @@ Contributions are always welcome, no matter your skill level! Check out the Oddi
 Error in user data setup: Invalid Form Body (1.options.0.options.1.description: Must be between 1 and 100 in length.)
 ```
 
-The total length of any slash command description must be less than 100 characters.
+This error will show up as soon as the bot starts, preventing it from responding to anything. The total length of any slash command description must be less than 100 characters.
