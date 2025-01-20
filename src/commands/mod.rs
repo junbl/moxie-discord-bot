@@ -67,6 +67,11 @@ impl ArgumentConvert for Scope {
     }
 }
 
+/// A struct that defines a particular button clicked for a particular pool.
+///
+/// Note that any `B` should implement [`ButtonAction`] and have a unique serialization. This gets
+/// turned into a string "{action}/{pool}" which then gets parsed back into which button was
+/// pressed.
 struct ButtonInteraction<B> {
     action: B,
     pool_id: PoolId,

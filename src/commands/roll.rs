@@ -17,7 +17,7 @@ use crate::rolls::{
 };
 use crate::{write_s, Context, Error};
 
-use super::pool::{delete_message, reset_message};
+use super::pool::{delete_message, reset_message, roll_inner};
 use super::ButtonAction;
 
 /// An expression representing a roll of the dice.
@@ -473,16 +473,16 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
                         .get_or_insert_with(Vec::new)
                         .push(CreateActionRow::Buttons(vec![
                             CreateButton::new(ButtonInteraction::new(
-                                PoolRollButtonAction::Delete,
+                                PoolButtonAction::Delete,
                                 pool,
                             ))
-                            .label(PoolRollButtonAction::Delete)
+                            .label(PoolButtonAction::Delete)
                             .style(ButtonStyle::Danger),
                             CreateButton::new(ButtonInteraction::new(
-                                PoolRollButtonAction::Reset,
+                                PoolButtonAction::Reset,
                                 pool,
                             ))
-                            .label(PoolRollButtonAction::Reset)
+                            .label(PoolButtonAction::Reset)
                             .style(ButtonStyle::Primary),
                         ]));
                 }
@@ -507,30 +507,34 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
 }
 
 #[derive(Debug, EnumString, IntoStaticStr)]
-pub enum PoolRollButtonAction {
+pub enum PoolButtonAction {
     #[strum(serialize = "d")]
     Delete,
     #[strum(serialize = "r")]
     Reset,
+    #[strum(serialize = "o")]
+    Roll,
 }
-impl From<PoolRollButtonAction> for String {
-    fn from(value: PoolRollButtonAction) -> Self {
+impl From<PoolButtonAction> for String {
+    fn from(value: PoolButtonAction) -> Self {
         format!("{value:?}")
     }
 }
-impl ButtonAction for PoolRollButtonAction {
+impl ButtonAction for PoolButtonAction {
     async fn handle(self, ctx: &Context<'_>, pool: &mut PoolInDb) -> Result<CreateReply, Error> {
         let pools = &ctx.data().pools;
-        let message = match self {
-            PoolRollButtonAction::Delete => {
+        match self {
+            PoolButtonAction::Delete => {
                 let deleted_pool = pool.delete(pools).await?;
-                delete_message(&pool.name, deleted_pool)
+                let message = delete_message(&pool.name, deleted_pool);
+                Ok(CreateReply::default().content(message))
             }
-            PoolRollButtonAction::Reset => {
+            PoolButtonAction::Reset => {
                 let num_dice = pool.reset(pools).await?;
-                reset_message(&pool.name, num_dice)
+                let message = reset_message(&pool.name, num_dice);
+                Ok(CreateReply::default().content(message))
             }
-        };
-        Ok(CreateReply::default().content(message))
+            PoolButtonAction::Roll => roll_inner(ctx, pool, None, None, None, None).await,
+        }
     }
 }
