@@ -185,7 +185,7 @@ pub async fn new(
 ) -> Result<(), Error> {
     info!("Received command: pool new");
     let message = format!("Created new pool `{name}` with {num_dice}!");
-    let mut pool = ctx
+    let pool = ctx
         .data()
         .pools
         .create(scope_or_default(scope, &ctx), name, num_dice)
@@ -201,7 +201,7 @@ pub async fn new(
         .content(message)
         .components(components);
     ctx.send(reply).await?;
-    handle_buttons::<PoolButtonAction>(&ctx, &mut pool).await?;
+    handle_buttons::<PoolButtonAction>(&ctx, &pool).await?;
     Ok(())
 }
 
@@ -219,7 +219,8 @@ pub async fn roll(
     #[description = "Number of thorns to add to potentially cut the outcome of a pool. Enables show_outcome."]
     thorns: Option<Thorns>,
     #[description = "Roll this pool with potency. Enables show_outcome."] potency: Option<bool>,
-    #[description = "Only roll some dice from the pool"] only_roll_some: Option<Dice>,
+    #[description = "Only roll some dice from the pool. Enables show_outcome."]
+    only_roll_some: Option<Dice>,
 ) -> Result<(), Error> {
     info!("Received command: roll");
     let mut pool = get_pool_try_all_scopes(&ctx, &pool_name, scope).await?;
@@ -232,7 +233,7 @@ pub async fn roll(
         only_roll_some,
     )
     .await?;
-    send_pool_roll_message(&ctx, message, &mut pool).await?;
+    send_pool_roll_message(&ctx, message, &pool).await?;
     Ok(())
 }
 pub async fn roll_inner(
@@ -251,7 +252,10 @@ pub async fn roll_inner(
             only_roll_some,
         )
         .await?;
-    let show_outcome = thorns.is_some() || show_outcome.unwrap_or_default();
+    let show_outcome = thorns.is_some()
+        || potency.is_some_and(std::convert::identity)
+        || only_roll_some.is_some()
+        || show_outcome.unwrap_or_default();
 
     let thorns = thorns.map(|thorns| {
         let mut rng = rand::thread_rng();
@@ -271,7 +275,7 @@ pub async fn roll_inner(
 pub async fn send_pool_roll_message(
     ctx: &Context<'_>,
     message: CreateReply,
-    pool: &mut PoolInDb,
+    pool: &PoolInDb,
 ) -> Result<(), Error> {
     let needs_to_handle_buttons = super::needs_to_handle_buttons(&message);
     ctx.send(message).await?;
@@ -536,7 +540,7 @@ pub async fn droproll(
         roll_message.content.as_deref().unwrap_or_default()
     );
     let message = roll_message.content(message);
-    send_pool_roll_message(&ctx, message, &mut pool).await?;
+    send_pool_roll_message(&ctx, message, &pool).await?;
     Ok(())
 }
 /// The type for the `num_dice` argument of the [`set`] command.

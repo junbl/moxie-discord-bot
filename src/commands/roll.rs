@@ -524,7 +524,7 @@ impl From<PoolButtonAction> for String {
     }
 }
 impl ButtonAction for PoolButtonAction {
-    async fn handle(self, ctx: &Context<'_>, pool: &mut PoolInDb) -> Result<CreateReply, Error> {
+    async fn handle(self, ctx: &Context<'_>, pool: &PoolInDb) -> Result<CreateReply, Error> {
         let pools = &ctx.data().pools;
         match self {
             PoolButtonAction::Delete => {
@@ -537,7 +537,10 @@ impl ButtonAction for PoolButtonAction {
                 let message = reset_message(&pool.name, num_dice);
                 Ok(CreateReply::default().content(message))
             }
-            PoolButtonAction::Roll => roll_inner(ctx, pool, None, None, None, None).await,
+            PoolButtonAction::Roll => {
+                let mut pool = pool.sync(ctx.data().pools.conn()).await?;
+                roll_inner(ctx, &mut pool, None, None, None, None).await
+            },
         }
     }
 }

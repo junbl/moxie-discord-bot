@@ -128,9 +128,9 @@ pub fn needs_to_handle_buttons(reply: &poise::CreateReply) -> bool {
 }
 
 pub trait ButtonAction {
-    async fn handle(self, ctx: &Context<'_>, pool: &mut PoolInDb) -> Result<CreateReply, Error>;
+    async fn handle(self, ctx: &Context<'_>, pool: &PoolInDb) -> Result<CreateReply, Error>;
 }
-pub async fn handle_buttons<B>(ctx: &Context<'_>, pool: &mut PoolInDb) -> Result<(), Error>
+pub async fn handle_buttons<B>(ctx: &Context<'_>, pool: &PoolInDb) -> Result<(), Error>
 where
     B: ButtonAction + FromStr,
     B::Err: std::error::Error + Send + Sync + 'static,

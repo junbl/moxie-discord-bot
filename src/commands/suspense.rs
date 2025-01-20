@@ -21,7 +21,7 @@ use crate::{write_s, Context, Error};
     prefix_command,
     aliases("s"),
     subcommand_required,
-    subcommands("up", "down", "set", "check")
+    subcommands("up", "down", "set", "check", "delete")
 )]
 pub async fn suspense(_: Context<'_>) -> Result<(), Error> {
     Ok(())
@@ -188,8 +188,8 @@ pub async fn check(ctx: Context<'_>) -> Result<(), Error> {
             .iter()
             .filter_map(|s| s.challenge.as_ref().map(|c| c.len()))
             .max()
-            .unwrap_or(global_message.len());
-        let width = (max_name_length + 3).max(8);
+            .unwrap_or_default();
+        let width = (max_name_length).max(global_message.len()) + 3;
         let mut total_suspense = 0;
         let message = suspenses
             .into_iter()

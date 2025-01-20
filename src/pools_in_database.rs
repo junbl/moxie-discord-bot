@@ -105,21 +105,23 @@ impl PoolInDb {
             original_size,
         }
     }
-    // pub async fn lookup(pools: &Pools, pool_id: PoolId) -> Result<Self, Error> {
-    //     match_pool_id!(pool_id, |id| async move {
-    //         let model = Entity::find_by_id(id)
-    //             .one(pools.conn())
-    //             .await?
-    //             .ok_or_else(|| MoxieError::PoolNotFound(pool_id.to_string()))?;
-    //         Ok(model.into())
-    //     })
-    // }
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
     pub fn original_size(&self) -> Dice {
         self.original_size
     }
+    /// Gets a new [`PoolInDb`] for this pool by checking the database for its current status.
+    pub async fn sync(&self, conn: &DatabaseConnection) -> Result<Self, anyhow::Error> {
+        match_pool_id!(self.id, |id| async move {
+            let model = Entity::find_by_id(id)
+                .one(conn)
+                .await?
+                .ok_or_else(|| MoxieError::PoolNotFound(self.name.clone()))?;
+            Ok(model.into())
+        })
+    }
+    /// Rolls the pool! Updates the database with dropped dice.
     pub async fn roll(
         &mut self,
         conn: &DatabaseConnection,
@@ -140,6 +142,7 @@ impl PoolInDb {
         })?;
         Ok(rolls)
     }
+    /// Removes this pool from the database.
     pub async fn delete(&self, pools: &Pools) -> Result<Pool, Error> {
         let delete = match_pool_id!(self.id, |id| {
             Entity::delete_by_id(id).exec(pools.conn())
@@ -150,6 +153,7 @@ impl PoolInDb {
             Err(anyhow!("Didn't delete exactly one row: {}", delete.rows_affected).into())
         }
     }
+    /// Sets this pool's current dice back to the size it started at.
     pub async fn reset(&self, pools: &Pools) -> Result<Dice, Error> {
         // should transaction but &self not 'static, but op is idempotent so nbd
         let original_size = match_pool_id!(self.id, |id| ActiveModel {
