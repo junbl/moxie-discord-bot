@@ -245,8 +245,12 @@ impl Pool {
         rolls: &RollDistribution,
         only_roll_some: Option<Dice>,
     ) -> Vec<Roll> {
+        let num_dice_to_roll = match only_roll_some {
+            Some(d) if d < self.dice => d,
+            _ => self.dice,
+        };
         let rolls: Vec<_> = rolls
-            .roll_n(rng, only_roll_some.unwrap_or(self.dice))
+            .roll_n(rng, num_dice_to_roll)
             .inspect(|roll| {
                 if roll.is_grim() {
                     self.dice -= 1;
