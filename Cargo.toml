@@ -40,6 +40,3 @@ sea-orm = { version = "1", default-features = false, features = [
     "macros",
     "with-chrono",
 ] }
-
-[features]
-staging = []
