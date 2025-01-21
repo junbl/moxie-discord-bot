@@ -39,7 +39,7 @@ pub async fn subcommand(ctx: Context<'_>, arg: String) -> Result<(), crate::Erro
 
 macro_rules! emoji {
     ($emoji_const:ident) => {
-        if option_env!("DEPLOY") == Some("STAGING") {
+        if option_env!("SHUTTLE_PROJECT_NAME").is_some_and(|var| var.contains("-staging")) {
             staging_emoji::$emoji_const
         } else {
             prod_emoji::$emoji_const
