@@ -87,14 +87,14 @@ mod staging_emoji {
     pub const D65_PERFECT: &str = "<:d65:1330588051973345280>";
     pub const D66: &str = "<:d66:1330588061762846822>";
 
-    pub const D65_PERFECT_MASTERY: &str = "<:d65_perfect_mastery:1331070362871529472>";
-    pub const D64_GRIM_MASTERY: &str = "<:d64_grim_mastery:1331070339408724029>";
-    pub const D61_MASTERY: &str = "<:d61_mastery:1331070317220597770>";
-    pub const D62_MASTERY: &str = "<:d62_mastery:1331070298757267557>";
-    pub const D63_MASTERY: &str = "<:d63_mastery:1331070281044856943>";
-    pub const D64_MASTERY: &str = "<:d64_mastery:1331070262292250716>";
-    pub const D65_MASTERY: &str = "<:d65_mastery:1331070236757327942>";
-    pub const D66_MASTERY: &str = "<:d66_mastery:1331070217346089100>";
+    pub const D65_PERFECT_MASTERY: &str = "<:d65_perfect_mastery:1331121313645072517>";
+    pub const D64_GRIM_MASTERY: &str = "<:d64_grim_mastery:1331121334972977202>";
+    pub const D61_MASTERY: &str = "<:d61_mastery:1331121254970687579>";
+    pub const D62_MASTERY: &str = "<:d62_mastery:1331121237711126528>";
+    pub const D63_MASTERY: &str = "<:d63_mastery:1331121219898052688>";
+    pub const D64_MASTERY: &str = "<:d64_mastery:1331121199073198170>";
+    pub const D65_MASTERY: &str = "<:d65_mastery:1331120913764319325>";
+    pub const D66_MASTERY: &str = "<:d66_mastery:1331120843916316673>";
 
     pub const D88: &str = "<:d88:1330588239282704457>";
     pub const D87: &str = "<:d87:1330588226238550119>";
