@@ -155,7 +155,18 @@ pub fn rolls_str(rolls: &[Roll], mastery_dice: Dice) -> String {
         .iter()
         .copied()
         .enumerate()
-        .map(|(i, r)| get_die_emoji(r, i < mastery_dice.dice as usize))
+        .map(|(i, r)| {
+            let mastery = i < mastery_dice.dice as usize;
+            // let emoji = get_die_emoji(r, mastery);
+            // if mastery && i == 0 {
+            //     std::borrow::Cow::Owned(format!("ᓬ {emoji}"))
+            // } else if i == mastery_dice.dice as usize {
+            //     std::borrow::Cow::Owned(format!("{emoji} ᕒ"))
+            // } else {
+            //     std::borrow::Cow::Borrowed(emoji)
+            // }
+            get_die_emoji(r, mastery)
+        })
         .join(" ")
 }
 pub fn thorns_str(thorns: &[Thorn]) -> String {
@@ -277,10 +288,9 @@ pub async fn roll_inner(
             only_roll_some,
         )
         .await?;
-    let show_outcome = thorns.is_some()
-        || potency.is_some_and(std::convert::identity)
-        || only_roll_some.is_some()
-        || show_outcome.unwrap_or_default();
+    let potency = potency.unwrap_or_default();
+    let show_outcome =
+        thorns.is_some() || potency || only_roll_some.is_some() || show_outcome.unwrap_or_default();
 
     let thorns = thorns.map(|thorns| {
         let mut rng = rand::thread_rng();
@@ -292,7 +302,7 @@ pub async fn roll_inner(
         .pool_size_pre_roll(pre_roll_size)
         .hide_outcome(!show_outcome)
         .thorns(thorns)
-        .potency(potency.unwrap_or_default());
+        .potency(potency);
     Ok(pool_result_msg.finish())
 }
 
