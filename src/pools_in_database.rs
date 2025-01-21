@@ -290,7 +290,7 @@ impl Pools {
         num_dice: SetValue,
         reset: bool,
     ) -> Result<Dice, Error> {
-        let new_size = num_dice.apply(pool.pool.dice());
+        let new_size = num_dice.apply(pool.original_size());
         let mut current_size = NotSet;
 
         if reset {
