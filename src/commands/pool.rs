@@ -37,9 +37,17 @@ pub async fn subcommand(ctx: Context<'_>, arg: String) -> Result<(), crate::Erro
     Ok(())
 }
 
-// prod emoji
-#[cfg(not(feature = "staging"))]
-mod emoji {
+macro_rules! emoji {
+    ($emoji_const:ident) => {
+        if option_env!("DEPLOY") == Some("STAGING") {
+            staging_emoji::$emoji_const
+        } else {
+            prod_emoji::$emoji_const
+        }
+    };
+}
+
+mod prod_emoji {
     pub const D61: &str = "<:d61:1270888983051636777>";
     pub const D62: &str = "<:d62:1270889005373984899>";
     pub const D63: &str = "<:d63:1270889037514670142>";
@@ -68,9 +76,7 @@ mod emoji {
     pub const D81: &str = "<:d81:1270888657426845766>";
 }
 
-// staging emoji
-#[cfg(feature = "staging")]
-mod emoji {
+mod staging_emoji {
 
     pub const D61: &str = "<:d61:1330587892707233945>";
     pub const D62: &str = "<:d62:1330588022965534760>";
@@ -101,24 +107,23 @@ mod emoji {
 }
 
 fn get_die_emoji(roll: Roll, mastery: bool) -> &'static str {
-    use emoji::*;
     match roll {
-        Roll::Grim(1) if mastery => D61_MASTERY,
-        Roll::Grim(2) if mastery => D62_MASTERY,
-        Roll::Grim(3) if mastery => D63_MASTERY,
-        Roll::Grim(4) if mastery => D64_GRIM_MASTERY,
-        Roll::Messy(4) if mastery => D64_MASTERY,
-        Roll::Messy(5) if mastery => D65_MASTERY,
-        Roll::Perfect(5) if mastery => D65_PERFECT_MASTERY,
-        Roll::Perfect(6) if mastery => D66_MASTERY,
-        Roll::Grim(1) => D61,
-        Roll::Grim(2) => D62,
-        Roll::Grim(3) => D63,
-        Roll::Grim(4) => D64_GRIM,
-        Roll::Messy(4) => D64,
-        Roll::Messy(5) => D65,
-        Roll::Perfect(5) => D65_PERFECT,
-        Roll::Perfect(6) => D66,
+        Roll::Grim(1) if mastery => emoji!(D61_MASTERY),
+        Roll::Grim(2) if mastery => emoji!(D62_MASTERY),
+        Roll::Grim(3) if mastery => emoji!(D63_MASTERY),
+        Roll::Grim(4) if mastery => emoji!(D64_GRIM_MASTERY),
+        Roll::Messy(4) if mastery => emoji!(D64_MASTERY),
+        Roll::Messy(5) if mastery => emoji!(D65_MASTERY),
+        Roll::Perfect(5) if mastery => emoji!(D65_PERFECT_MASTERY),
+        Roll::Perfect(6) if mastery => emoji!(D66_MASTERY),
+        Roll::Grim(1) => emoji!(D61),
+        Roll::Grim(2) => emoji!(D62),
+        Roll::Grim(3) => emoji!(D63),
+        Roll::Grim(4) => emoji!(D64_GRIM),
+        Roll::Messy(4) => emoji!(D64),
+        Roll::Messy(5) => emoji!(D65),
+        Roll::Perfect(5) => emoji!(D65_PERFECT),
+        Roll::Perfect(6) => emoji!(D66),
         other => get_die_emoji(
             other
                 .as_number()
@@ -130,16 +135,15 @@ fn get_die_emoji(roll: Roll, mastery: bool) -> &'static str {
 }
 
 fn get_thorn_emoji(thorn: Thorn) -> &'static str {
-    use emoji::*;
     [
-        (8, D88),
-        (7, D87),
-        (6, D86),
-        (5, D85),
-        (4, D84),
-        (3, D83),
-        (2, D82),
-        (1, D81),
+        (8, emoji!(D88)),
+        (7, emoji!(D87)),
+        (6, emoji!(D86)),
+        (5, emoji!(D85)),
+        (4, emoji!(D84)),
+        (3, emoji!(D83)),
+        (2, emoji!(D82)),
+        (1, emoji!(D81)),
     ]
     .into_iter()
     .find_map(|(roll_number, emoji)| (thorn.as_number() == roll_number).then_some(emoji))
