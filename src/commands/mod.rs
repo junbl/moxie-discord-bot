@@ -196,10 +196,11 @@ where
                 ),
             )
             .await?;
-        } else {
-            mci.create_response(ctx, serenity::all::CreateInteractionResponse::Acknowledge)
-                .await?;
         }
+        // else {
+        //     mci.create_response(ctx, serenity::all::CreateInteractionResponse::Acknowledge)
+        //         .await?;
+        // }
     }
     Ok(())
 }

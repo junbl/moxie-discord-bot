@@ -4,9 +4,7 @@ use nom::Finish;
 use poise::{CreateReply, ReplyHandle};
 use rand::thread_rng;
 use rand_distr::Distribution;
-use serenity::all::{
-    ButtonStyle, ComponentInteraction, CreateActionRow, CreateButton, UserId,
-};
+use serenity::all::{ButtonStyle, ComponentInteraction, CreateActionRow, CreateButton, UserId};
 use std::boxed::Box;
 use std::fmt::Write;
 use std::str::FromStr;
@@ -476,6 +474,14 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
             }
             write_s!(message, "{}", thorns_str(&thorns));
         }
+
+        for (user_id, roll) in &self.assists {
+            write_s!(
+                message,
+                "\n ### @<{user_id}> assisted with... \n # {}",
+                rolls_str(&[*roll], Dice::default())
+            );
+        }
         let mut components = None;
         if let Some(pool_remaining) = self.pool_remaining {
             write_s!(
@@ -519,7 +525,12 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
         }
 
         if !self.hide_outcome {
-            let roll = roll_result(self.rolls.iter().copied(), self.mastery);
+            let all_rolls = self
+                .rolls
+                .iter()
+                .chain(self.assists.iter().map(|(_user_id, roll)| roll))
+                .copied();
+            let roll = roll_result(all_rolls, self.mastery);
             let final_roll = thorns.into_iter().fold(roll, Roll::cut);
             if roll != final_roll {
                 write_s!(message, "\n### `{roll}`, cut to...");
