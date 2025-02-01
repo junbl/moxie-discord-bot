@@ -20,7 +20,7 @@ use crate::rolls::{
 use crate::{write_s, Context, Error};
 
 use super::pool::{delete_message, reset_message, roll_inner};
-use super::{ButtonHandler, ButtonHandlerFuture, InteractionTarget};
+use super::{interaction_reponse_message, ButtonHandler, ButtonHandlerFuture, InteractionTarget};
 
 /// An expression representing a roll of the dice.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -592,7 +592,8 @@ impl ButtonHandler for PoolButtonAction {
                     roll_inner(&ctx, &mut pool, None, None, None, None).await
                 }
             }
-            .map(Some)
+            .map(interaction_reponse_message)
+            .map(serenity::all::CreateInteractionResponse::Message)
         })
     }
 }
@@ -628,7 +629,7 @@ impl ButtonHandler for RollButtonAction {
     ) -> ButtonHandlerFuture<'a> {
         let rolls = &ctx.data().roll_dist;
         let user_id = mci.user.id;
-        let (reply_handle, _roll_id, message) = target;
+        let (_reply_handle, _roll_id, message) = target;
         Box::pin(async move {
             match self {
                 RollButtonAction::Assist => {
@@ -637,9 +638,11 @@ impl ButtonHandler for RollButtonAction {
                         rolls.sample(&mut rng)
                     };
                     let message = message.assist(user_id, roll).finish();
-                    reply_handle.edit(ctx, message).await?;
+                    // reply_handle.edit(ctx, message).await?;
 
-                    Ok(None)
+                    Ok(serenity::all::CreateInteractionResponse::UpdateMessage(
+                        interaction_reponse_message(message),
+                    ))
                 }
             }
         })

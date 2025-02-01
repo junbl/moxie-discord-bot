@@ -11,7 +11,7 @@ use roll::{Dice, RollId};
 use serenity::{
     all::{
         ArgumentConvert, CacheHttp, ChannelId, ComponentInteraction, ComponentInteractionCollector,
-        CreateInteractionResponseMessage, GuildId,
+        CreateInteractionResponse, CreateInteractionResponseMessage, GuildId,
     },
     FutureExt,
 };
@@ -149,9 +149,11 @@ pub trait ButtonHandler {
         target: Self::Target<'a>,
     ) -> ButtonHandlerFuture<'a>;
 }
-/// Alias for return type of [`ButtonHandler::handle`] bc it's long as hell.
+/// Alias for return type of [`ButtonHandler::handle`] bc it's long as hell thanks to the RPITIT
+/// limitation.
 pub type ButtonHandlerFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<Option<CreateReply>, Error>> + 'a + Send>>;
+    Pin<Box<dyn Future<Output = Result<CreateInteractionResponse, Error>> + 'a + Send>>;
+
 /// A trait implemented by [`ButtonHandler::Target`] to define what that associated type needs to
 /// do to be used in [`handle_buttons`].
 pub trait InteractionTarget {
@@ -186,23 +188,19 @@ where
             .action;
 
         let message = action.handle(ctx, &mci, target.clone()).await?;
-        if let Some(message) = message {
-            mci.create_response(
-                ctx,
-                serenity::all::CreateInteractionResponse::Message(
-                    CreateInteractionResponseMessage::new()
-                        .content(message.content.unwrap_or_default())
-                        .components(message.components.unwrap_or_default()),
-                ),
-            )
-            .await?;
-        }
+        mci.create_response(ctx, message).await?;
         // else {
         //     mci.create_response(ctx, serenity::all::CreateInteractionResponse::Acknowledge)
         //         .await?;
         // }
     }
     Ok(())
+}
+
+fn interaction_reponse_message(reply: CreateReply) -> CreateInteractionResponseMessage {
+    CreateInteractionResponseMessage::new()
+        .content(reply.content.unwrap_or_default())
+        .components(reply.components.unwrap_or_default())
 }
 
 /// Health check
