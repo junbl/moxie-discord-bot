@@ -1,11 +1,16 @@
 //! This module contains each of the commands that the bot supports.
-use std::{future::ready, str::FromStr};
+use std::{
+    future::{ready, Future},
+    pin::Pin,
+    str::FromStr,
+};
 
+use derive_more::{Display, From};
 use poise::CreateReply;
-use roll::Dice;
+use roll::{Dice, RollId};
 use serenity::{
     all::{
-        ArgumentConvert, CacheHttp, ChannelId, ComponentInteractionCollector,
+        ArgumentConvert, CacheHttp, ChannelId, ComponentInteraction, ComponentInteractionCollector,
         CreateInteractionResponseMessage, GuildId,
     },
     FutureExt,
@@ -13,11 +18,7 @@ use serenity::{
 use thiserror::Error;
 use tracing::info;
 
-use crate::{
-    pools_in_database::{PoolId, PoolInDb},
-    rolls::Pool,
-    Context, Error,
-};
+use crate::{pools_in_database::PoolId, rolls::Pool, Context, Error};
 pub mod pool;
 pub mod roll;
 pub mod suspense;
@@ -74,13 +75,13 @@ impl ArgumentConvert for Scope {
 /// pressed.
 struct ButtonInteraction<B> {
     action: B,
-    pool_id: PoolId,
+    id: InteractionId,
 }
 impl<B> ButtonInteraction<B> {
-    fn new(action: B, pool: PoolId) -> Self {
+    fn new(action: B, id: impl Into<InteractionId>) -> Self {
         Self {
             action,
-            pool_id: pool,
+            id: id.into(),
         }
     }
 }
@@ -96,9 +97,9 @@ where
             .split_once('/')
             .ok_or_else(|| format!("Failed to parse input (no `/`): {s}"))?;
         let action = action.parse()?;
-        let pool_id = pool_id.parse()?;
+        let pool_id: PoolId = pool_id.parse()?;
 
-        Ok(Self { action, pool_id })
+        Ok(Self::new(action, pool_id))
     }
 }
 impl<B> std::fmt::Display for ButtonInteraction<B>
@@ -107,7 +108,7 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let action: &str = (&self.action).into();
-        let id = &self.pool_id;
+        let id = &self.id;
         write!(f, "{action}/{id}")
     }
 }
@@ -120,6 +121,12 @@ where
     }
 }
 
+#[derive(PartialEq, Clone, Copy, From, Display)]
+pub enum InteractionId {
+    Pool(PoolId),
+    Roll(RollId),
+}
+
 pub fn needs_to_handle_buttons(reply: &poise::CreateReply) -> bool {
     reply
         .components
@@ -127,23 +134,45 @@ pub fn needs_to_handle_buttons(reply: &poise::CreateReply) -> bool {
         .is_some_and(|components| !components.is_empty())
 }
 
-pub trait ButtonAction {
-    async fn handle(self, ctx: &Context<'_>, pool: &PoolInDb) -> Result<CreateReply, Error>;
+/// A trait for enums that represent different button options on a response.
+///
+/// This defines what action should be taken when that button is pressed.
+pub trait ButtonHandler {
+    type Target<'a>: Clone + InteractionTarget
+    where
+        Self: 'a;
+    // We can't use RPITIT here because of <https://github.com/rust-lang/rust/issues/100013>
+    fn handle<'a: 'b, 'b>(
+        self,
+        ctx: Context<'a>,
+        mci: &'b ComponentInteraction,
+        target: Self::Target<'a>,
+    ) -> ButtonHandlerFuture<'a>;
 }
-pub async fn handle_buttons<B>(ctx: &Context<'_>, pool: &PoolInDb) -> Result<(), Error>
+/// Alias for return type of [`ButtonHandler::handle`] bc it's long as hell.
+pub type ButtonHandlerFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Option<CreateReply>, Error>> + 'a + Send>>;
+/// A trait implemented by [`ButtonHandler::Target`] to define what that associated type needs to
+/// do to be used in [`handle_buttons`].
+pub trait InteractionTarget {
+    /// Get the unique ID for this interaction used to define it in a [`ButtonInteraction`].
+    fn id(&self) -> InteractionId;
+}
+/// Starts a background
+pub async fn handle_buttons<'a, B>(ctx: Context<'a>, target: B::Target<'a>) -> Result<(), Error>
 where
-    B: ButtonAction + FromStr,
+    B: ButtonHandler + FromStr,
     B::Err: std::error::Error + Send + Sync + 'static,
 {
     ctx.defer().await?;
-    let pool_id = pool.id;
+    let id = target.id();
     while let Some(mci) = ComponentInteractionCollector::new(ctx.serenity_context())
         .timeout(std::time::Duration::from_secs(120))
         .filter(move |mci| {
             mci.data
                 .custom_id
                 .parse::<ButtonInteraction<B>>()
-                .is_ok_and(|pbi| pbi.pool_id == pool_id)
+                .is_ok_and(|bi| bi.id == id)
         })
         .await
     {
@@ -155,17 +184,22 @@ where
             .parse::<ButtonInteraction<B>>()
             .expect("Custom ID parsed in filter")
             .action;
-        let message = action.handle(ctx, pool).await?;
-        // mci.create_response(ctx, serenity::all::CreateInteractionResponse::Acknowledge)
-        mci.create_response(
-            ctx,
-            serenity::all::CreateInteractionResponse::Message(
-                CreateInteractionResponseMessage::new()
-                    .content(message.content.unwrap_or_default())
-                    .components(message.components.unwrap_or_default()),
-            ),
-        )
-        .await?;
+
+        let message = action.handle(ctx, &mci, target.clone()).await?;
+        if let Some(message) = message {
+            mci.create_response(
+                ctx,
+                serenity::all::CreateInteractionResponse::Message(
+                    CreateInteractionResponseMessage::new()
+                        .content(message.content.unwrap_or_default())
+                        .components(message.components.unwrap_or_default()),
+                ),
+            )
+            .await?;
+        } else {
+            mci.create_response(ctx, serenity::all::CreateInteractionResponse::Acknowledge)
+                .await?;
+        }
     }
     Ok(())
 }

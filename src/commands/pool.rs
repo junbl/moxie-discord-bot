@@ -237,7 +237,7 @@ pub async fn new(
         .content(message)
         .components(components);
     ctx.send(reply).await?;
-    handle_buttons::<PoolButtonAction>(&ctx, &pool).await?;
+    handle_buttons::<PoolButtonAction>(ctx, &pool).await?;
     Ok(())
 }
 
@@ -269,7 +269,7 @@ pub async fn roll(
         only_roll_some,
     )
     .await?;
-    send_pool_roll_message(&ctx, message, &pool).await?;
+    send_pool_roll_message(ctx, message, &pool).await?;
     Ok(())
 }
 pub async fn roll_inner(
@@ -308,7 +308,7 @@ pub async fn roll_inner(
 
 /// Sends the given message, handling any interactions if necessary.
 pub async fn send_pool_roll_message(
-    ctx: &Context<'_>,
+    ctx: Context<'_>,
     message: CreateReply,
     pool: &PoolInDb,
 ) -> Result<(), Error> {
@@ -575,7 +575,7 @@ pub async fn droproll(
         roll_message.content.as_deref().unwrap_or_default()
     );
     let message = roll_message.content(message);
-    send_pool_roll_message(&ctx, message, &pool).await?;
+    send_pool_roll_message(ctx, message, &pool).await?;
     Ok(())
 }
 /// The type for the `num_dice` argument of the [`set`] command.

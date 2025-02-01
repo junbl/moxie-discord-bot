@@ -105,7 +105,7 @@ pub fn roll_result(rolls: impl IntoIterator<Item = Roll>, mastery_dice: Dice) ->
             break;
         }
         any_mastery_crit |= this_roll_mastery_crit;
-        tracing::info!(
+        tracing::debug!(
             index,
             ?roll,
             any_mastery_crit,

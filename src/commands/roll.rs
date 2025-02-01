@@ -1,16 +1,20 @@
 use derive_setters::Setters;
 use nom::error::Error as NomError;
 use nom::Finish;
-use poise::CreateReply;
+use poise::{CreateReply, ReplyHandle};
 use rand::thread_rng;
-use serenity::all::{ButtonStyle, CreateActionRow, CreateButton};
+use rand_distr::Distribution;
+use serenity::all::{
+    ButtonStyle, ComponentInteraction, CreateActionRow, CreateButton, UserId,
+};
+use std::boxed::Box;
 use std::fmt::Write;
 use std::str::FromStr;
 use strum::{EnumString, IntoStaticStr};
 use tracing::instrument;
 
 use crate::commands::pool::{rolls_str, thorns_str};
-use crate::commands::ButtonInteraction;
+use crate::commands::{handle_buttons, ButtonInteraction};
 use crate::pools_in_database::{PoolId, PoolInDb};
 use crate::rolls::{
     replace_rolls, roll_replacements, roll_result, Roll, RollDistribution, Thorn, ThornDistribution,
@@ -18,7 +22,7 @@ use crate::rolls::{
 use crate::{write_s, Context, Error};
 
 use super::pool::{delete_message, reset_message, roll_inner};
-use super::ButtonAction;
+use super::{ButtonHandler, ButtonHandlerFuture, InteractionTarget};
 
 /// An expression representing a roll of the dice.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -365,20 +369,26 @@ pub async fn roll(
 
     let wild = wild.unwrap_or_default();
     let rolls = replace_rolls(rolls, &roll_replacements(wild, wild));
-    let message = RollOutcomeMessageBuilder::new(&rolls)
+    let roll_id = RollId::new();
+    let message_builder = RollOutcomeMessageBuilder::new(&rolls)
         .username(&ctx)
         .thorns(thorns)
         .mastery(dice.mastery)
         .roll_name(name)
-        .potency(potency.unwrap_or_default())
-        .finish();
+        .roll_buttons(roll_id)
+        .potency(potency.unwrap_or_default());
+    let message = message_builder.clone().finish();
 
-    ctx.send(message).await?;
+    let needs_to_handle_buttons = super::needs_to_handle_buttons(&message);
+    let reply_handle = ctx.send(message).await?;
+    if needs_to_handle_buttons {
+        handle_buttons::<RollButtonAction>(ctx, (reply_handle, roll_id, message_builder)).await?;
+    }
 
     Ok(())
 }
 
-#[derive(Default, Setters)]
+#[derive(Default, Setters, Clone)]
 #[must_use]
 pub struct RollOutcomeMessageBuilder<'a> {
     #[setters(skip)] // required
@@ -397,7 +407,10 @@ pub struct RollOutcomeMessageBuilder<'a> {
     #[setters(into)]
     pool_size_pre_roll: Option<Dice>,
     #[setters(into)]
+    roll_buttons: Option<RollId>,
+    #[setters(into)]
     pool_buttons: Option<PoolId>,
+    assists: Vec<(UserId, Roll)>,
     potency: bool,
     hide_outcome: bool,
 }
@@ -415,6 +428,10 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
     }
     pub fn username(mut self, ctx: &'a Context<'_>) -> Self {
         let _ = self.user_id.insert(ctx.author().id);
+        self
+    }
+    pub fn assist(mut self, user_id: UserId, roll: Roll) -> Self {
+        self.assists.push((user_id, roll));
         self
     }
     pub fn finish(self) -> CreateReply {
@@ -491,6 +508,15 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
                 }
             }
         }
+        if let Some(roll_id) = self.roll_buttons {
+            components
+                .get_or_insert_with(Vec::new)
+                .push(CreateActionRow::Buttons(vec![CreateButton::new(
+                    ButtonInteraction::new(RollButtonAction::Assist, roll_id),
+                )
+                .label(RollButtonAction::Assist)
+                .style(ButtonStyle::Primary)]));
+        }
 
         if !self.hide_outcome {
             let roll = roll_result(self.rolls.iter().copied(), self.mastery);
@@ -509,6 +535,11 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
     }
 }
 
+/// The different options for what a button on a pool message can do.
+///
+/// Note that the serialize options need be unique between this and any other implementors of
+/// [`ButtonHandler`] because all the button interactions go into the same pipe and have to get
+/// sorted out using this.
 #[derive(Debug, EnumString, IntoStaticStr)]
 pub enum PoolButtonAction {
     #[strum(serialize = "d")]
@@ -523,24 +554,97 @@ impl From<PoolButtonAction> for String {
         format!("{value:?}")
     }
 }
-impl ButtonAction for PoolButtonAction {
-    async fn handle(self, ctx: &Context<'_>, pool: &PoolInDb) -> Result<CreateReply, Error> {
-        let pools = &ctx.data().pools;
-        match self {
-            PoolButtonAction::Delete => {
-                let deleted_pool = pool.delete(pools).await?;
-                let message = delete_message(&pool.name, deleted_pool);
-                Ok(CreateReply::default().content(message))
+impl ButtonHandler for PoolButtonAction {
+    type Target<'a> = &'a PoolInDb;
+    fn handle<'a: 'b, 'b>(
+        self,
+        ctx: Context<'a>,
+        _mci: &'b ComponentInteraction,
+        target: Self::Target<'a>,
+    ) -> ButtonHandlerFuture<'a> {
+        Box::pin(async move {
+            let pool = target;
+            let pools = &ctx.data().pools;
+            match self {
+                PoolButtonAction::Delete => {
+                    let deleted_pool = pool.delete(pools).await?;
+                    let message = delete_message(&pool.name, deleted_pool);
+                    Ok(CreateReply::default().content(message))
+                }
+                PoolButtonAction::Reset => {
+                    let num_dice = pool.reset(pools).await?;
+                    let message = reset_message(&pool.name, num_dice);
+                    Ok(CreateReply::default().content(message))
+                }
+                PoolButtonAction::Roll => {
+                    let mut pool = pool.sync(ctx.data().pools.conn()).await?;
+                    roll_inner(&ctx, &mut pool, None, None, None, None).await
+                }
             }
-            PoolButtonAction::Reset => {
-                let num_dice = pool.reset(pools).await?;
-                let message = reset_message(&pool.name, num_dice);
-                Ok(CreateReply::default().content(message))
+            .map(Some)
+        })
+    }
+}
+
+impl<'a> InteractionTarget for &'a PoolInDb {
+    fn id(&self) -> super::InteractionId {
+        self.id.into()
+    }
+}
+
+/// The different options for what a button on a message can do.
+///
+/// Note that the serialize options need be unique between this and any other implementors of
+/// [`ButtonHandler`] because all the button interactions go into the same pipe and have to get
+/// sorted out using this.
+#[derive(Debug, EnumString, IntoStaticStr)]
+pub enum RollButtonAction {
+    #[strum(serialize = "a")]
+    Assist,
+}
+impl From<RollButtonAction> for String {
+    fn from(value: RollButtonAction) -> Self {
+        format!("{value:?}")
+    }
+}
+impl ButtonHandler for RollButtonAction {
+    type Target<'a> = (ReplyHandle<'a>, RollId, RollOutcomeMessageBuilder<'a>);
+    fn handle<'a: 'b, 'b>(
+        self,
+        ctx: Context<'a>,
+        mci: &'b ComponentInteraction,
+        target: Self::Target<'a>,
+    ) -> ButtonHandlerFuture<'a> {
+        let rolls = &ctx.data().roll_dist;
+        let user_id = mci.user.id;
+        let (reply_handle, _roll_id, message) = target;
+        Box::pin(async move {
+            match self {
+                RollButtonAction::Assist => {
+                    let roll = {
+                        let mut rng = thread_rng();
+                        rolls.sample(&mut rng)
+                    };
+                    let message = message.assist(user_id, roll).finish();
+                    reply_handle.edit(ctx, message).await?;
+
+                    Ok(None)
+                }
             }
-            PoolButtonAction::Roll => {
-                let mut pool = pool.sync(ctx.data().pools.conn()).await?;
-                roll_inner(ctx, &mut pool, None, None, None, None).await
-            },
-        }
+        })
+    }
+}
+
+impl<'a> InteractionTarget for (ReplyHandle<'a>, RollId, RollOutcomeMessageBuilder<'a>) {
+    fn id(&self) -> super::InteractionId {
+        self.1.into()
+    }
+}
+
+#[derive(PartialEq, Copy, Clone, derive_more::Display)]
+pub struct RollId(uuid::Uuid);
+impl RollId {
+    pub fn new() -> Self {
+        Self(uuid::Uuid::new_v4())
     }
 }
