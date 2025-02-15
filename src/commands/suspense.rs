@@ -33,7 +33,7 @@ async fn query(
 ) -> Result<Vec<suspense::Model>, sea_orm::DbErr> {
     select
         .filter(suspense::Column::ChannelId.eq(ctx.channel_id().get()))
-        .all(ctx.data().pools.conn())
+        .all(ctx.data().db.conn())
         .await
 }
 
@@ -109,7 +109,7 @@ async fn set_inner(
         suspense: Set(new_suspense),
         ..current_suspense
     };
-    let _ = active_model.save(ctx.data().pools.conn()).await?;
+    let _ = active_model.save(ctx.data().db.conn()).await?;
     let add_amt_to_msg = |dice: Dice, msg| {
         let mut msg = String::from(msg);
         let dice = dice.dice;
@@ -242,7 +242,7 @@ pub async fn delete(
         .await?
         .ok_or_else(|| format!("Challenge not found: {challenge}"))?;
     suspense::Entity::delete_by_id(suspense.id)
-        .exec(ctx.data().pools.conn())
+        .exec(ctx.data().db.conn())
         .await?;
     let message = format!("Deleted suspense entry for challenge `{challenge}`");
     ctx.say(message).await?;
