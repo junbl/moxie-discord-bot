@@ -143,7 +143,7 @@ impl PoolInDb {
         Ok(rolls)
     }
     /// Removes this pool from the database.
-    pub async fn delete(&self, pools: &Pools) -> Result<Pool, Error> {
+    pub async fn delete(&self, pools: &Database) -> Result<Pool, Error> {
         let delete = match_pool_id!(self.id, |id| {
             Entity::delete_by_id(id).exec(pools.conn())
         })?;
@@ -154,7 +154,7 @@ impl PoolInDb {
         }
     }
     /// Sets this pool's current dice back to the size it started at.
-    pub async fn reset(&self, pools: &Pools) -> Result<Dice, Error> {
+    pub async fn reset(&self, pools: &Database) -> Result<Dice, Error> {
         // should transaction but &self not 'static, but op is idempotent so nbd
         let original_size = match_pool_id!(self.id, |id| ActiveModel {
             id: Unchanged(id),
@@ -189,11 +189,11 @@ impl From<channel_pool::Model> for PoolInDb {
     }
 }
 
-pub struct Pools {
+pub struct Database {
     conn: DatabaseConnection,
 }
 
-impl Pools {
+impl Database {
     pub fn new(conn: DatabaseConnection) -> Self {
         Self { conn }
     }

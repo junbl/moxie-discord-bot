@@ -4,19 +4,21 @@ use shuttle_runtime::SecretStore;
 use shuttle_serenity::ShuttleSerenity;
 
 mod commands;
+mod database;
 mod error;
-mod pools_in_database;
 mod rolls;
 
-use commands::{help, pool::pool, quickpool, roll::roll, scenebreak, suspense::suspense};
+use commands::{
+    character::character, help, pool::pool, quickpool, roll::roll, scenebreak, suspense::suspense,
+};
 
 // use commands::pool::{check, delete, new, reset, roll, set};
-use pools_in_database::Pools;
+use database::Database;
 use rolls::{RollDistribution, ThornDistribution};
 
 /// User data, which is stored and accessible in all command invocations
 pub struct Data {
-    pools: Pools,
+    db: Database,
     roll_dist: RollDistribution,
     thorn_dist: ThornDistribution,
 }
@@ -45,6 +47,7 @@ async fn main(
                 help(),
                 roll(),
                 scenebreak(),
+                character(),
             ],
             ..Default::default()
         })
@@ -52,7 +55,7 @@ async fn main(
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                 Ok(Data {
-                    pools: Pools::new(conn),
+                    db: Database::new(conn),
                     roll_dist: RollDistribution::new(),
                     thorn_dist: ThornDistribution::new(),
                 })
