@@ -1,7 +1,7 @@
 //! This module is for code relating to rolling the dice - generating random values and mapping
 //! that to success values.
 
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use rand_distr::{Distribution, Uniform};
 use serde::{Deserialize, Serialize};
 
@@ -105,7 +105,7 @@ pub fn roll_result(rolls: impl IntoIterator<Item = Roll>, mastery_dice: Dice) ->
             break;
         }
         any_mastery_crit |= this_roll_mastery_crit;
-        tracing::info!(
+        tracing::debug!(
             index,
             ?roll,
             any_mastery_crit,
@@ -158,7 +158,7 @@ pub struct RollDistribution {
 impl RollDistribution {
     pub fn new() -> Self {
         Self {
-            dist: Uniform::new_inclusive(1, 6),
+            dist: Uniform::new_inclusive(1, 6).expect("hard coded values won't fail"),
         }
     }
     pub fn roll_n<'a, R: Rng + ?Sized>(
@@ -177,7 +177,7 @@ impl Distribution<Roll> for RollDistribution {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Thorn {
     Cut(u8),
     None(u8),
@@ -192,6 +192,17 @@ impl Thorn {
         }
     }
 }
+impl TryFrom<u8> for Thorn {
+    type Error = u8;
+
+    fn try_from(thorn: u8) -> Result<Self, Self::Error> {
+        match thorn {
+            r @ 1..=6 => Ok(Thorn::None(r)),
+            r @ (7 | 8) => Ok(Thorn::Cut(r)),
+            _ => Err(thorn),
+        }
+    }
+}
 
 pub struct ThornDistribution {
     dist: Uniform<u8>,
@@ -199,7 +210,7 @@ pub struct ThornDistribution {
 impl ThornDistribution {
     pub fn new() -> Self {
         Self {
-            dist: Uniform::new_inclusive(1, 8),
+            dist: Uniform::new_inclusive(1, 8).expect("hard-coded values won't fail"),
         }
     }
     pub fn roll_n<'a, R: Rng + ?Sized>(
@@ -236,7 +247,7 @@ impl Pool {
         self.dice = new_dice;
     }
     pub fn roll(&mut self, rolls: &RollDistribution, only_roll_some: Option<Dice>) -> Vec<Roll> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         self.roll_rng(&mut rng, rolls, only_roll_some)
     }
     pub fn roll_rng<R: Rng + ?Sized>(

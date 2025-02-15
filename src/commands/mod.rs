@@ -1,12 +1,18 @@
 //! This module contains each of the commands that the bot supports.
-use std::{future::ready, str::FromStr};
+use std::{
+    future::{ready, Future},
+    pin::Pin,
+    str::FromStr,
+};
 
+use derive_more::{Display, From};
+use itertools::Itertools;
 use poise::CreateReply;
-use roll::Dice;
+use roll::{Dice, RollId};
 use serenity::{
     all::{
-        ArgumentConvert, CacheHttp, ChannelId, ComponentInteractionCollector,
-        CreateInteractionResponseMessage, GuildId,
+        ArgumentConvert, CacheHttp, ChannelId, ComponentInteraction, ComponentInteractionCollector,
+        CreateInteractionResponse, CreateInteractionResponseMessage, GuildId,
     },
     FutureExt,
 };
@@ -14,8 +20,8 @@ use thiserror::Error;
 use tracing::info;
 
 use crate::{
-    pools_in_database::{PoolId, PoolInDb},
-    rolls::Pool,
+    pools_in_database::PoolId,
+    rolls::{Pool, Roll, Thorn},
     Context, Error,
 };
 pub mod pool;
@@ -72,15 +78,16 @@ impl ArgumentConvert for Scope {
 /// Note that any `B` should implement [`ButtonAction`] and have a unique serialization. This gets
 /// turned into a string "{action}/{pool}" which then gets parsed back into which button was
 /// pressed.
+#[derive(Debug)]
 struct ButtonInteraction<B> {
     action: B,
-    pool_id: PoolId,
+    id: InteractionId,
 }
 impl<B> ButtonInteraction<B> {
-    fn new(action: B, pool: PoolId) -> Self {
+    fn new(action: B, id: impl Into<InteractionId>) -> Self {
         Self {
             action,
-            pool_id: pool,
+            id: id.into(),
         }
     }
 }
@@ -92,13 +99,13 @@ where
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (action, pool_id) = s
+        let (action, id) = s
             .split_once('/')
             .ok_or_else(|| format!("Failed to parse input (no `/`): {s}"))?;
         let action = action.parse()?;
-        let pool_id = pool_id.parse()?;
+        let id: InteractionId = id.parse()?;
 
-        Ok(Self { action, pool_id })
+        Ok(Self::new(action, id))
     }
 }
 impl<B> std::fmt::Display for ButtonInteraction<B>
@@ -107,7 +114,7 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let action: &str = (&self.action).into();
-        let id = &self.pool_id;
+        let id = &self.id;
         write!(f, "{action}/{id}")
     }
 }
@@ -120,6 +127,34 @@ where
     }
 }
 
+#[derive(PartialEq, Clone, Copy, From, Debug, Display)]
+pub enum InteractionId {
+    Pool(PoolId),
+    Roll(RollId),
+}
+impl FromStr for InteractionId {
+    type Err = InteractionIdParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<PoolId>()
+            .map(InteractionId::Pool)
+            .map_err(InteractionIdParseError::Pool)
+            .or_else(|_| {
+                s.parse::<RollId>()
+                    .map(InteractionId::Roll)
+                    .map_err(InteractionIdParseError::Roll)
+            })
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum InteractionIdParseError {
+    #[error("{0}")]
+    Pool(<PoolId as FromStr>::Err),
+    #[error("{0}")]
+    Roll(<RollId as FromStr>::Err),
+}
+
 pub fn needs_to_handle_buttons(reply: &poise::CreateReply) -> bool {
     reply
         .components
@@ -127,27 +162,54 @@ pub fn needs_to_handle_buttons(reply: &poise::CreateReply) -> bool {
         .is_some_and(|components| !components.is_empty())
 }
 
-pub trait ButtonAction {
-    async fn handle(self, ctx: &Context<'_>, pool: &PoolInDb) -> Result<CreateReply, Error>;
+/// A trait for enums that represent different button options on a response.
+///
+/// This defines what action should be taken when that button is pressed.
+pub trait ButtonHandler {
+    type Target<'a>: Clone + InteractionTarget
+    where
+        Self: 'a;
+    // We can't use RPITIT here because of <https://github.com/rust-lang/rust/issues/100013>
+    fn handle<'a: 'b, 'b>(
+        self,
+        ctx: Context<'a>,
+        mci: &'b ComponentInteraction,
+        target: Self::Target<'a>,
+    ) -> ButtonHandlerFuture<'b>;
 }
-pub async fn handle_buttons<B>(ctx: &Context<'_>, pool: &PoolInDb) -> Result<(), Error>
+/// Alias for return type of [`ButtonHandler::handle`] bc it's long as hell thanks to the RPITIT
+/// limitation.
+pub type ButtonHandlerFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<CreateInteractionResponse, Error>> + 'a + Send>>;
+
+/// A trait implemented by [`ButtonHandler::Target`] to define what that associated type needs to
+/// do to be used in [`handle_buttons`].
+pub trait InteractionTarget {
+    /// Get the unique ID for this interaction used to define it in a [`ButtonInteraction`].
+    fn id(&self) -> InteractionId;
+}
+/// Listens for "Interactions" (clicks on buttons in messages) and responds to them as appropriate.
+pub async fn handle_buttons<'a, B>(ctx: Context<'a>, target: B::Target<'a>) -> Result<(), Error>
 where
-    B: ButtonAction + FromStr,
+    B: ButtonHandler + FromStr + std::fmt::Debug,
     B::Err: std::error::Error + Send + Sync + 'static,
 {
-    ctx.defer().await?;
-    let pool_id = pool.id;
+    let id = target.id();
+    info!(%id, "Looking for id");
     while let Some(mci) = ComponentInteractionCollector::new(ctx.serenity_context())
         .timeout(std::time::Duration::from_secs(120))
         .filter(move |mci| {
             mci.data
                 .custom_id
                 .parse::<ButtonInteraction<B>>()
-                .is_ok_and(|pbi| pbi.pool_id == pool_id)
+                .is_ok_and(|bi| {
+                    info!(?bi, "Got interaction");
+                    bi.id == id
+                })
         })
         .await
     {
-        tracing::debug!(?mci, ctx_id = ctx.id(), "Got interaction");
+        info!(?mci, ctx_id = ctx.id(), "Got matching interaction");
 
         let action = mci
             .data
@@ -155,19 +217,22 @@ where
             .parse::<ButtonInteraction<B>>()
             .expect("Custom ID parsed in filter")
             .action;
-        let message = action.handle(ctx, pool).await?;
-        // mci.create_response(ctx, serenity::all::CreateInteractionResponse::Acknowledge)
-        mci.create_response(
-            ctx,
-            serenity::all::CreateInteractionResponse::Message(
-                CreateInteractionResponseMessage::new()
-                    .content(message.content.unwrap_or_default())
-                    .components(message.components.unwrap_or_default()),
-            ),
-        )
-        .await?;
+
+        let message = action.handle(ctx, &mci, target.clone()).await?;
+        info!(?mci, ctx_id = ctx.id(), ?message, "Interaction response");
+        mci.create_response(ctx, message).await?;
+        // else {
+        //     mci.create_response(ctx, serenity::all::CreateInteractionResponse::Acknowledge)
+        //         .await?;
+        // }
     }
     Ok(())
+}
+
+fn interaction_reponse_message(reply: CreateReply) -> CreateInteractionResponseMessage {
+    CreateInteractionResponseMessage::new()
+        .content(reply.content.unwrap_or_default())
+        .components(reply.components.unwrap_or_default())
 }
 
 /// Health check
@@ -221,4 +286,227 @@ pub async fn help(
     };
     poise::builtins::help(ctx, command.as_deref(), config).await?;
     Ok(())
+}
+
+macro_rules! emoji {
+    ($emoji_const:ident) => {
+        if std::env::var("SHUTTLE_PROJECT_NAME").is_ok_and(|var| var.contains("-staging")) {
+            staging_emoji::$emoji_const
+        } else {
+            prod_emoji::$emoji_const
+        }
+    };
+}
+
+mod prod_emoji {
+    pub const D61: &str = "<:d61:1270888983051636777>";
+    pub const D62: &str = "<:d62:1270889005373984899>";
+    pub const D63: &str = "<:d63:1270889037514670142>";
+    pub const D64: &str = "<:d64:1270889188190978199>";
+    pub const D64_GRIM: &str = "<:d64_grim:1331067368444661881>";
+    pub const D65: &str = "<:d65:1270889051871776809>";
+    pub const D65_PERFECT: &str = "<:d65_perfect:1270928629286567976>";
+    pub const D66: &str = "<:d66:1270889063628537910>";
+
+    pub const D65_PERFECT_MASTERY: &str = "<:d65_perfect_mastery:1331067597738741821>";
+    pub const D64_GRIM_MASTERY: &str = "<:d64_grim_mastery:1331067565694386247>";
+    pub const D61_MASTERY: &str = "<:d61_mastery:1331067540151079024>";
+    pub const D62_MASTERY: &str = "<:d62_mastery:1331067517929783336>";
+    pub const D63_MASTERY: &str = "<:d63_mastery:1331067487340593192>";
+    pub const D64_MASTERY: &str = "<:d64_mastery:1331067466805416058>";
+    pub const D65_MASTERY: &str = "<:d65_mastery:1331067427471233106>";
+    pub const D66_MASTERY: &str = "<:d66_mastery:1331067398442192946>";
+
+    pub const D88: &str = "<:d88:1270888678700355584>";
+    pub const D87: &str = "<:d87:1270888640054038599>";
+    pub const D86: &str = "<:d86:1270815442394677389>";
+    pub const D85: &str = "<:d85:1270815474309140612>";
+    pub const D84: &str = "<:d84:1270815484412956724>";
+    pub const D83: &str = "<:d83:1270815503912271983>";
+    pub const D82: &str = "<:d82:1270815516671344660>";
+    pub const D81: &str = "<:d81:1270888657426845766>";
+}
+
+mod staging_emoji {
+
+    pub const D61: &str = "<:d61:1330587892707233945>";
+    pub const D62: &str = "<:d62:1330588022965534760>";
+    pub const D63: &str = "<:d63:1330588035968143381>";
+    pub const D64: &str = "<:d64:1330588042800664719>";
+    pub const D64_GRIM: &str = "<:d64_grim:1331070199629353080>";
+    pub const D65: &str = "<:d65:1330588051973345280>";
+    pub const D65_PERFECT: &str = "<:d65:1330588051973345280>";
+    pub const D66: &str = "<:d66:1330588061762846822>";
+
+    pub const D65_PERFECT_MASTERY: &str = "<:d65_perfect_mastery:1331121313645072517>";
+    pub const D64_GRIM_MASTERY: &str = "<:d64_grim_mastery:1331121334972977202>";
+    pub const D61_MASTERY: &str = "<:d61_mastery:1331121254970687579>";
+    pub const D62_MASTERY: &str = "<:d62_mastery:1331121237711126528>";
+    pub const D63_MASTERY: &str = "<:d63_mastery:1331121219898052688>";
+    pub const D64_MASTERY: &str = "<:d64_mastery:1331121199073198170>";
+    pub const D65_MASTERY: &str = "<:d65_mastery:1331120913764319325>";
+    pub const D66_MASTERY: &str = "<:d66_mastery:1331120843916316673>";
+
+    pub const D88: &str = "<:d88:1330588239282704457>";
+    pub const D87: &str = "<:d87:1330588226238550119>";
+    pub const D86: &str = "<:d86:1330588215148675102>";
+    pub const D85: &str = "<:d85:1330588201726906501>";
+    pub const D84: &str = "<:d84:1330588187353153627>";
+    pub const D83: &str = "<:d83:1330588115697537095>";
+    pub const D82: &str = "<:d82:1330588084244578334>";
+    pub const D81: &str = "<:d81:1330588072793866322>";
+}
+
+fn get_die_emoji(roll: Roll, mastery: bool) -> &'static str {
+    match roll {
+        Roll::Grim(1) if mastery => emoji!(D61_MASTERY),
+        Roll::Grim(2) if mastery => emoji!(D62_MASTERY),
+        Roll::Grim(3) if mastery => emoji!(D63_MASTERY),
+        Roll::Grim(4) if mastery => emoji!(D64_GRIM_MASTERY),
+        Roll::Messy(4) if mastery => emoji!(D64_MASTERY),
+        Roll::Messy(5) if mastery => emoji!(D65_MASTERY),
+        Roll::Perfect(5) if mastery => emoji!(D65_PERFECT_MASTERY),
+        Roll::Perfect(6) if mastery => emoji!(D66_MASTERY),
+        Roll::Grim(1) => emoji!(D61),
+        Roll::Grim(2) => emoji!(D62),
+        Roll::Grim(3) => emoji!(D63),
+        Roll::Grim(4) => emoji!(D64_GRIM),
+        Roll::Messy(4) => emoji!(D64),
+        Roll::Messy(5) => emoji!(D65),
+        Roll::Perfect(5) => emoji!(D65_PERFECT),
+        Roll::Perfect(6) => emoji!(D66),
+        other => get_die_emoji(
+            other
+                .as_number()
+                .try_into()
+                .expect("Rolls must only be in the 1-6 range"),
+            mastery,
+        ),
+    }
+}
+
+fn get_thorn_emoji(thorn: Thorn) -> &'static str {
+    [
+        (8, emoji!(D88)),
+        (7, emoji!(D87)),
+        (6, emoji!(D86)),
+        (5, emoji!(D85)),
+        (4, emoji!(D84)),
+        (3, emoji!(D83)),
+        (2, emoji!(D82)),
+        (1, emoji!(D81)),
+    ]
+    .into_iter()
+    .find_map(|(roll_number, emoji)| (thorn.as_number() == roll_number).then_some(emoji))
+    .expect("Thorns must only be in the 1-8 range")
+}
+
+pub fn rolls_str(rolls: &[Roll], mastery_dice: Dice) -> String {
+    rolls
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(i, r)| {
+            let mastery = i < mastery_dice.dice as usize;
+            get_die_emoji(r, mastery)
+        })
+        .join(" ")
+}
+pub fn thorns_str(thorns: &[Thorn]) -> String {
+    thorns.iter().copied().map(get_thorn_emoji).join(" ")
+}
+
+/// Parses out the roll emoji from the message back into the original rolls.
+pub fn get_rolls_from_message(message: &str) -> (Vec<Roll>, Vec<Thorn>, Dice, Vec<Roll>) {
+    let d6_re = lazy_regex::regex!(
+        r"(?<assist>assisted!\s*)?<:d6(?<result>\d)(?<replace>_(?:grim|perfect))?(?<mastery>_mastery)?:\d+>"
+    );
+    let d8_re = lazy_regex::regex!(r"<:d8(?<result>\d):\d+>");
+    let mut mastery = Dice::from(0);
+    let get_result = |cap: &lazy_regex::Captures| {
+        cap.name("result")
+            .expect("must be present if regex matches")
+            .as_str()
+            .parse::<u8>()
+            .expect("single digit won't fail parsing into u8")
+    };
+    let (rolls, assists) = d6_re
+        .captures_iter(message)
+        .map(|cap| {
+            let result = get_result(&cap);
+            if cap.name("mastery").is_some() {
+                mastery += 1;
+            }
+            let roll = match cap.name("replace").map(|m| m.as_str()) {
+                Some("_grim") => Roll::Grim(result),
+                Some("_perfect") => Roll::Perfect(result),
+                _ => Roll::try_from(result).expect("values from emoji won't be out of range"),
+            };
+            (roll, cap.name("assist").is_some())
+        })
+        .partition_map(|(roll, was_assist)| {
+            if was_assist {
+                itertools::Either::Right(roll)
+            } else {
+                itertools::Either::Left(roll)
+            }
+        });
+
+    let thorns = d8_re
+        .captures_iter(message)
+        .map(|cap| {
+            let result = get_result(&cap);
+            Thorn::try_from(result).expect("values from emoji won't be out of range")
+        })
+        .collect();
+
+    (rolls, thorns, mastery, assists)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::rolls::{Roll, Thorn};
+
+    use super::get_rolls_from_message;
+    use super::roll::{Dice, RollOutcomeMessageBuilder};
+
+    #[test]
+    fn emoji_back_and_forth() {
+        let rolls = [
+            Roll::Grim(1),
+            Roll::Grim(2),
+            Roll::Grim(3),
+            Roll::Grim(4),
+            Roll::Messy(4),
+            Roll::Messy(5),
+            Roll::Perfect(5),
+            Roll::Perfect(6),
+        ];
+        let thorns = (1..8)
+            .map(Thorn::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        let message = RollOutcomeMessageBuilder::new(&rolls)
+            .thorns(thorns.clone())
+            .finish();
+        let (parsed_rolls, parsed_thorns, parsed_mastery_dice, assists) =
+            get_rolls_from_message(&message.content.unwrap());
+        assert_eq!(&rolls, parsed_rolls.as_slice());
+        assert_eq!(thorns, parsed_thorns);
+        assert_eq!(Dice::from(0), parsed_mastery_dice);
+        assert!(assists.is_empty());
+
+        let mastery_dice = Dice::from(8);
+        let message = RollOutcomeMessageBuilder::new(&rolls)
+            .thorns(thorns.clone())
+            .mastery(mastery_dice)
+            .finish();
+        let (parsed_rolls, parsed_thorns, parsed_mastery_dice, assists) =
+            get_rolls_from_message(&message.content.unwrap());
+        assert_eq!(&rolls, parsed_rolls.as_slice());
+        assert_eq!(thorns, parsed_thorns);
+        assert_eq!(mastery_dice, parsed_mastery_dice);
+        assert!(assists.is_empty());
+    }
 }
