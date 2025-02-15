@@ -5,6 +5,7 @@ use std::{
     str::FromStr,
 };
 
+use character::CharacterId;
 use derive_more::{Display, From};
 use itertools::Itertools;
 use poise::CreateReply;
@@ -20,10 +21,11 @@ use thiserror::Error;
 use tracing::info;
 
 use crate::{
-    pools_in_database::PoolId,
+    database::PoolId,
     rolls::{Pool, Roll, Thorn},
     Context, Error,
 };
+pub mod character;
 pub mod pool;
 pub mod roll;
 pub mod suspense;
@@ -131,6 +133,7 @@ where
 pub enum InteractionId {
     Pool(PoolId),
     Roll(RollId),
+    Character(CharacterId),
 }
 impl FromStr for InteractionId {
     type Err = InteractionIdParseError;
@@ -144,6 +147,11 @@ impl FromStr for InteractionId {
                     .map(InteractionId::Roll)
                     .map_err(InteractionIdParseError::Roll)
             })
+            .or_else(|_| {
+                s.parse::<CharacterId>()
+                    .map(InteractionId::Character)
+                    .map_err(InteractionIdParseError::Character)
+            })
     }
 }
 
@@ -153,6 +161,8 @@ pub enum InteractionIdParseError {
     Pool(<PoolId as FromStr>::Err),
     #[error("{0}")]
     Roll(<RollId as FromStr>::Err),
+    #[error("{0}")]
+    Character(<CharacterId as FromStr>::Err),
 }
 
 pub fn needs_to_handle_buttons(reply: &poise::CreateReply) -> bool {
@@ -180,7 +190,7 @@ pub trait ButtonHandler {
 /// Alias for return type of [`ButtonHandler::handle`] bc it's long as hell thanks to the RPITIT
 /// limitation.
 pub type ButtonHandlerFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<CreateInteractionResponse, Error>> + 'a + Send>>;
+    Pin<Box<dyn Future<Output = Result<Option<CreateInteractionResponse>, Error>> + 'a + Send>>;
 
 /// A trait implemented by [`ButtonHandler::Target`] to define what that associated type needs to
 /// do to be used in [`handle_buttons`].
@@ -195,17 +205,15 @@ where
     B::Err: std::error::Error + Send + Sync + 'static,
 {
     let id = target.id();
-    info!(%id, "Looking for id");
+    info!(target=?id, "Looking for id");
     while let Some(mci) = ComponentInteractionCollector::new(ctx.serenity_context())
         .timeout(std::time::Duration::from_secs(120))
         .filter(move |mci| {
-            mci.data
-                .custom_id
+            let custom_id = &mci.data.custom_id;
+            info!(?custom_id, target = ?id, "Got interaction");
+            custom_id
                 .parse::<ButtonInteraction<B>>()
-                .is_ok_and(|bi| {
-                    info!(?bi, "Got interaction");
-                    bi.id == id
-                })
+                .is_ok_and(|bi| bi.id == id)
         })
         .await
     {
@@ -218,9 +226,11 @@ where
             .expect("Custom ID parsed in filter")
             .action;
 
-        let message = action.handle(ctx, &mci, target.clone()).await?;
-        info!(?mci, ctx_id = ctx.id(), ?message, "Interaction response");
-        mci.create_response(ctx, message).await?;
+        let response = action.handle(ctx, &mci, target.clone()).await?;
+        info!(?mci, ctx_id = ctx.id(), ?response, "Interaction response");
+        if let Some(response) = response {
+            mci.create_response(ctx, response).await?;
+        }
         // else {
         //     mci.create_response(ctx, serenity::all::CreateInteractionResponse::Acknowledge)
         //         .await?;

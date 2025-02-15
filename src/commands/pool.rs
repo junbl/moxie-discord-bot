@@ -17,7 +17,7 @@ use crate::{
         ButtonInteraction, Scope,
     },
     error::MoxieError,
-    pools_in_database::PoolInDb,
+    database::PoolInDb,
     rolls::Pool,
     Context, Error,
 };
@@ -48,7 +48,7 @@ async fn autocomplete_pool_name<'a>(
     partial: &'a str,
 ) -> impl Stream<Item = String> + 'a {
     ctx.data()
-        .pools
+        .db
         .list(Scope::Channel(ctx.channel_id()), partial, Some(32), None)
         .await
         .map_or_else(
@@ -87,7 +87,7 @@ pub async fn new(
     let message = format!("Created new pool `{name}` with {num_dice}!");
     let pool = ctx
         .data()
-        .pools
+        .db
         .create(scope_or_default(scope, &ctx), name, num_dice)
         .await?;
 
@@ -147,7 +147,7 @@ pub async fn roll_inner(
     let pre_roll_size = pool.pool.dice();
     let rolls = pool
         .roll(
-            ctx.data().pools.conn(),
+            ctx.data().db.conn(),
             &ctx.data().roll_dist,
             only_roll_some,
         )
@@ -200,7 +200,7 @@ async fn get_pool_try_all_scopes(
     };
     let mut pool = Err(MoxieError::PoolNotFound(pool_name.to_string()));
     for scope in scopes_to_check {
-        if let Ok(p) = ctx.data().pools.get(scope, pool_name).await {
+        if let Ok(p) = ctx.data().db.get(scope, pool_name).await {
             pool = Ok(p);
             break;
         }
@@ -220,7 +220,7 @@ pub async fn reset(
     info!("Received command: reset");
     let num_dice = ctx
         .data()
-        .pools
+        .db
         .reset(scope_or_default(scope, &ctx), &pool_name)
         .await?;
     ctx.say(reset_message(&pool_name, num_dice)).await?;
@@ -242,7 +242,7 @@ pub async fn delete(
     info!("Received command: delete");
     let deleted_pool = ctx
         .data()
-        .pools
+        .db
         .delete(scope_or_default(scope, &ctx), &pool_name)
         .await?;
     ctx.say(delete_message(&pool_name, deleted_pool)).await?;
@@ -268,7 +268,7 @@ pub async fn list(
     let page_size = 12;
     let pools = ctx
         .data()
-        .pools
+        .db
         .list(
             scope_or_default(scope, &ctx),
             &pool_search_string.unwrap_or_default(),
@@ -326,7 +326,7 @@ pub async fn set_inner(
 ) -> Result<(PoolInDb, String), Error> {
     let mut pool = get_pool_try_all_scopes(&ctx, pool_name, scope).await?;
     let starting_size = pool.pool.dice();
-    let new_size = ctx.data().pools.set(&mut pool, num_dice).await?;
+    let new_size = ctx.data().db.set(&mut pool, num_dice).await?;
     let message = format!("Set pool `{pool_name}` `{starting_size}` → `{new_size}`!",);
     Ok((pool, message))
 }
@@ -352,7 +352,7 @@ pub async fn setmax(
     let starting_size = pool.original_size();
     let new_size = ctx
         .data()
-        .pools
+        .db
         .set_max(&mut pool, num_dice, reset.unwrap_or_default())
         .await?;
     let message =
@@ -382,7 +382,7 @@ async fn check_inner(
     info!("Received command: check");
     let pool = ctx
         .data()
-        .pools
+        .db
         .get(scope_or_default(scope, &ctx), &pool_name)
         .await?;
     ctx.say(format!(

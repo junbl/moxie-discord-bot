@@ -16,7 +16,7 @@ use tracing::instrument;
 
 use crate::commands::{handle_buttons, ButtonInteraction};
 use crate::commands::{rolls_str, thorns_str};
-use crate::pools_in_database::{PoolId, PoolInDb};
+use crate::database::{PoolId, PoolInDb};
 use crate::rolls::{
     replace_rolls, roll_replacements, roll_result, Roll, RollDistribution, Thorn, ThornDistribution,
 };
@@ -609,7 +609,7 @@ impl ButtonHandler for PoolButtonAction {
     ) -> ButtonHandlerFuture<'b> {
         Box::pin(async move {
             let pool = target;
-            let pools = &ctx.data().pools;
+            let pools = &ctx.data().db;
             match self {
                 PoolButtonAction::Delete => {
                     let deleted_pool = pool.delete(pools).await?;
@@ -622,12 +622,13 @@ impl ButtonHandler for PoolButtonAction {
                     Ok(CreateReply::default().content(message))
                 }
                 PoolButtonAction::Roll => {
-                    let mut pool = pool.sync(ctx.data().pools.conn()).await?;
+                    let mut pool = pool.sync(ctx.data().db.conn()).await?;
                     roll_inner(&ctx, &mut pool, None, None, None, None).await
                 }
             }
             .map(interaction_reponse_message)
             .map(serenity::all::CreateInteractionResponse::Message)
+            .map(Some)
         })
     }
 }
@@ -723,6 +724,7 @@ impl ButtonHandler for RollButtonAction {
                     ))
                 }
             }
+            .map(Some)
         })
     }
 }

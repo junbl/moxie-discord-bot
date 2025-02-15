@@ -8,8 +8,8 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
     pub channel_id: i64,
-    pub suspense: i16,
     pub challenge: Option<String>,
+    pub suspense: i16,
     pub created: DateTimeUtc,
     pub updated: DateTimeUtc,
 }
