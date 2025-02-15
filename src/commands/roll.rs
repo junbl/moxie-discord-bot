@@ -4,15 +4,18 @@ use nom::Finish;
 use poise::{CreateReply, ReplyHandle};
 use rand::thread_rng;
 use rand_distr::Distribution;
-use serenity::all::{ButtonStyle, ComponentInteraction, CreateActionRow, CreateButton, UserId};
+use serenity::all::{
+    ButtonStyle, ComponentInteraction, CreateActionRow, CreateButton, CreateEmbed,
+    CreateInteractionResponseMessage, UserId,
+};
 use std::boxed::Box;
 use std::fmt::Write;
 use std::str::FromStr;
 use strum::{EnumString, IntoStaticStr};
 use tracing::instrument;
 
-use crate::commands::pool::{rolls_str, thorns_str};
 use crate::commands::{handle_buttons, ButtonInteraction};
+use crate::commands::{rolls_str, thorns_str};
 use crate::pools_in_database::{PoolId, PoolInDb};
 use crate::rolls::{
     replace_rolls, roll_replacements, roll_result, Roll, RollDistribution, Thorn, ThornDistribution,
@@ -20,7 +23,10 @@ use crate::rolls::{
 use crate::{write_s, Context, Error};
 
 use super::pool::{delete_message, reset_message, roll_inner};
-use super::{interaction_reponse_message, ButtonHandler, ButtonHandlerFuture, InteractionTarget};
+use super::{
+    get_rolls_from_message, interaction_reponse_message, ButtonHandler, ButtonHandlerFuture,
+    InteractionTarget,
+};
 
 /// An expression representing a roll of the dice.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -208,11 +214,10 @@ impl std::fmt::Display for Thorns {
 }
 mod parse {
     use super::{Dice, RollExpr, Thorns};
-    use nom::branch::permutation;
     use nom::bytes::complete::tag;
     use nom::character::complete::{multispace0, u8};
     use nom::combinator::{all_consuming, opt};
-    use nom::sequence::{delimited, pair, preceded, terminated};
+    use nom::sequence::{delimited, preceded, terminated, tuple};
     use nom::IResult;
 
     pub fn parse_dice_expression(dice_expr: &str) -> IResult<&str, Dice> {
@@ -233,13 +238,11 @@ mod parse {
         let optional_plus_before =
             |p| preceded(delimited(multispace0, opt(tag("+")), multispace0), p);
         assert!(optional_plus_before(opt(terminated(u8, tag("m"))))("").is_ok());
-        let (remaining, (dice, (thorns, mastery))) = all_consuming(pair(
-            opt(terminated(u8, tag("d"))),
-            permutation((
-                optional_plus_before(opt(terminated(u8, tag("t")))),
-                optional_plus_before(opt(terminated(u8, tag("m")))),
-            )),
-        ))(roll_expr.trim())?;
+        let (remaining, (dice, thorns, mastery)) = all_consuming(tuple((
+            optional_plus_before(opt(terminated(u8, tag("d")))),
+            optional_plus_before(opt(terminated(u8, tag("t")))),
+            optional_plus_before(opt(terminated(u8, tag("m")))),
+        )))(roll_expr.trim())?;
         Ok((
             remaining,
             RollExpr::new(
@@ -262,17 +265,19 @@ mod parse {
                 ("1d    \n\t   2t", RollExpr::new(1, 2, 0)),
                 ("1d+2t", RollExpr::new(1, 2, 0)),
                 ("1d + 2t", RollExpr::new(1, 2, 0)),
-                ("2t", RollExpr::new(0, 2, 0)),
+                ("2m", RollExpr::new(0, 0, 2)),
+                ("1t", RollExpr::new(0, 1, 0)),
                 ("100d255t", RollExpr::new(100, 255, 0)),
                 ("0d0t", RollExpr::new(0, 0, 0)),
                 ("0d0t0m", RollExpr::new(0, 0, 0)),
                 ("1d2t3m", RollExpr::new(1, 2, 3)),
-                ("1d3m2t", RollExpr::new(1, 2, 3)),
-                ("3m1d2t", RollExpr::new(1, 2, 3)),
                 ("", RollExpr::new(0, 0, 0)),
             ];
             for (input, expected) in good {
-                assert_eq!(input.parse::<RollExpr>().unwrap(), expected);
+                match input.parse::<RollExpr>() {
+                    Ok(result) => assert_eq!(result, expected, "{input}"),
+                    Err(error) => panic!("failed parsing: {input} ({error})"),
+                }
             }
             let bad = [
                 "1000000000d",
@@ -389,7 +394,6 @@ pub async fn roll(
 #[derive(Default, Setters, Clone)]
 #[must_use]
 pub struct RollOutcomeMessageBuilder<'a> {
-    #[setters(skip)] // required
     rolls: &'a [Roll],
     #[setters(skip)] // custom setter by Context
     user_id: Option<serenity::all::UserId>,
@@ -408,7 +412,6 @@ pub struct RollOutcomeMessageBuilder<'a> {
     roll_buttons: Option<RollId>,
     #[setters(into)]
     pool_buttons: Option<PoolId>,
-    assists: Vec<(UserId, Roll)>,
     potency: bool,
     hide_outcome: bool,
 }
@@ -426,10 +429,6 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
     }
     pub fn username(mut self, ctx: &'a Context<'_>) -> Self {
         let _ = self.user_id.insert(ctx.author().id);
-        self
-    }
-    pub fn assist(mut self, user_id: UserId, roll: Roll) -> Self {
-        self.assists.push((user_id, roll));
         self
     }
     pub fn finish(self) -> CreateReply {
@@ -475,13 +474,9 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
             write_s!(message, "{}", thorns_str(&thorns));
         }
 
-        for (user_id, roll) in &self.assists {
-            write_s!(
-                message,
-                "\n ### @<{user_id}> assisted with... \n # {}",
-                rolls_str(&[*roll], Dice::default())
-            );
-        }
+        // where to put the assists
+        message.push(MARKER);
+
         let mut components = None;
         if let Some(pool_remaining) = self.pool_remaining {
             write_s!(
@@ -524,26 +519,60 @@ impl<'a> RollOutcomeMessageBuilder<'a> {
                 .style(ButtonStyle::Primary)]));
         }
 
-        if !self.hide_outcome {
-            let all_rolls = self
-                .rolls
-                .iter()
-                .chain(self.assists.iter().map(|(_user_id, roll)| roll))
-                .copied();
-            let roll = roll_result(all_rolls, self.mastery);
-            let final_roll = thorns.into_iter().fold(roll, Roll::cut);
-            if roll != final_roll {
-                write_s!(message, "\n### `{roll}`, cut to...");
-            }
-            write_s!(message, "\n# `{final_roll}`");
-        }
+        let embed = (!self.hide_outcome).then(|| {
+            let all_rolls = self.rolls.iter().copied();
+            roll_result_embed(all_rolls, thorns, self.mastery)
+        });
 
         let mut message = CreateReply::default().content(message);
+        if let Some(embed) = embed {
+            message = message.embed(embed);
+        }
         if let Some(components) = components {
             message = message.components(components);
         }
         message
     }
+}
+
+/// Zero-width space used to determine where to insert new assists when editing a message.
+pub const MARKER: char = '\u{200B}';
+
+pub fn assist(user_id: UserId, roll: Roll, sent_message: &mut String) -> Result<(), Error> {
+    let assist_result = rolls_str(&[roll], Dice::default());
+    let assist_message = format!("\n<@{user_id}> assisted! \n# {assist_result}");
+    let idx = sent_message
+        .find(MARKER)
+        .ok_or("Message missing replacement marker to add assists!")?;
+    sent_message.insert_str(idx, &assist_message);
+    Ok(())
+}
+
+pub fn roll_result_embed(
+    rolls: impl IntoIterator<Item = Roll>,
+    thorns: impl IntoIterator<Item = Thorn>,
+    mastery: Dice,
+) -> CreateEmbed {
+    let mut final_result_message = String::new();
+
+    let roll = roll_result(rolls, mastery);
+    let final_roll = thorns.into_iter().fold(roll, Roll::cut);
+    if roll != final_roll {
+        write_s!(final_result_message, "### **{roll}**, cut to...\n");
+    }
+    write_s!(final_result_message, "\n# **{final_roll}**");
+    let color = match final_roll {
+        Roll::Disaster(_) => 0xff6673,
+        Roll::Grim(_) => 0xa2a3a6,
+        Roll::Messy(_) => 0xffc966,
+        // Roll::Perfect(_) => 0xa9d274,
+        Roll::Perfect(_) => 0x629740,
+        Roll::Critical => 0x75ade6,
+        Roll::MultiCritical => 0xbf94e6,
+    };
+    CreateEmbed::default()
+        .description(final_result_message)
+        .color(color)
 }
 
 /// The different options for what a button on a pool message can do.
@@ -572,7 +601,7 @@ impl ButtonHandler for PoolButtonAction {
         ctx: Context<'a>,
         _mci: &'b ComponentInteraction,
         target: Self::Target<'a>,
-    ) -> ButtonHandlerFuture<'a> {
+    ) -> ButtonHandlerFuture<'b> {
         Box::pin(async move {
             let pool = target;
             let pools = &ctx.data().pools;
@@ -625,11 +654,11 @@ impl ButtonHandler for RollButtonAction {
         self,
         ctx: Context<'a>,
         mci: &'b ComponentInteraction,
-        target: Self::Target<'a>,
-    ) -> ButtonHandlerFuture<'a> {
+        _target: Self::Target<'a>,
+    ) -> ButtonHandlerFuture<'b> {
         let rolls = &ctx.data().roll_dist;
         let user_id = mci.user.id;
-        let (_reply_handle, _roll_id, message) = target;
+        let mut sent_message = mci.message.clone();
         Box::pin(async move {
             match self {
                 RollButtonAction::Assist => {
@@ -637,11 +666,55 @@ impl ButtonHandler for RollButtonAction {
                         let mut rng = thread_rng();
                         rolls.sample(&mut rng)
                     };
-                    let message = message.assist(user_id, roll).finish();
-                    // reply_handle.edit(ctx, message).await?;
+                    let (rolls, thorns, mastery_dice, assists) =
+                        get_rolls_from_message(&sent_message.content);
+                    tracing::info!(
+                        message = sent_message.content,
+                        ?rolls,
+                        ?thorns,
+                        ?mastery_dice,
+                        ?assists,
+                        "Parsed rolls from message"
+                    );
+
+                    assist(user_id, roll, &mut sent_message.content)?;
+
+                    let final_result = roll_result_embed(
+                        rolls
+                            .iter()
+                            .copied()
+                            .chain(assists)
+                            .chain(std::iter::once(roll)),
+                        thorns,
+                        mastery_dice,
+                    );
+
+                    // reply_handle.edit(ctx, new_message).await?;
 
                     Ok(serenity::all::CreateInteractionResponse::UpdateMessage(
-                        interaction_reponse_message(message),
+                        CreateInteractionResponseMessage::new()
+                            .content(sent_message.content)
+                            .components(
+                                sent_message
+                                    .components
+                                    .into_iter()
+                                    .map(|component| {
+                                        CreateActionRow::Buttons(
+                                            component
+                                                .components
+                                                .into_iter()
+                                                .filter_map(|button| match button {
+                                                    serenity::all::ActionRowComponent::Button(
+                                                        button,
+                                                    ) => Some(button.into()),
+                                                    _ => None,
+                                                })
+                                                .collect(),
+                                        )
+                                    })
+                                    .collect(),
+                            )
+                            .embed(final_result),
                     ))
                 }
             }
@@ -655,10 +728,18 @@ impl<'a> InteractionTarget for (ReplyHandle<'a>, RollId, RollOutcomeMessageBuild
     }
 }
 
-#[derive(PartialEq, Copy, Clone, derive_more::Display)]
+#[derive(PartialEq, Copy, Clone, Debug, derive_more::Display)]
 pub struct RollId(uuid::Uuid);
 impl RollId {
     pub fn new() -> Self {
         Self(uuid::Uuid::new_v4())
+    }
+}
+
+impl FromStr for RollId {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        uuid::Uuid::try_parse(s).map(Self)
     }
 }

@@ -177,7 +177,7 @@ impl Distribution<Roll> for RollDistribution {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Thorn {
     Cut(u8),
     None(u8),
@@ -189,6 +189,17 @@ impl Thorn {
     pub fn as_number(self) -> u8 {
         match self {
             Thorn::Cut(r) | Thorn::None(r) => r,
+        }
+    }
+}
+impl TryFrom<u8> for Thorn {
+    type Error = u8;
+
+    fn try_from(thorn: u8) -> Result<Self, Self::Error> {
+        match thorn {
+            r @ 1..=6 => Ok(Thorn::None(r)),
+            r @ (7 | 8) => Ok(Thorn::Cut(r)),
+            _ => Err(thorn),
         }
     }
 }
