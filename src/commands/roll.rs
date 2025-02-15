@@ -2,7 +2,7 @@ use derive_setters::Setters;
 use nom::error::Error as NomError;
 use nom::Finish;
 use poise::{CreateReply, ReplyHandle};
-use rand::thread_rng;
+use rand::rng;
 use rand_distr::Distribution;
 use serenity::all::{
     ButtonStyle, ComponentInteraction, CreateActionRow, CreateButton, CreateEmbed,
@@ -51,7 +51,7 @@ impl RollExpr {
         roll_dist: &RollDistribution,
         thorn_dist: &ThornDistribution,
     ) -> (Vec<Roll>, Vec<Thorn>) {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let rolls = roll_dist
             .roll_n(&mut rng, self.dice + self.mastery)
             .collect();
@@ -217,32 +217,37 @@ mod parse {
     use nom::bytes::complete::tag;
     use nom::character::complete::{multispace0, u8};
     use nom::combinator::{all_consuming, opt};
-    use nom::sequence::{delimited, preceded, terminated, tuple};
-    use nom::IResult;
+    use nom::sequence::{delimited, preceded, terminated};
+    use nom::{IResult, Parser};
 
     pub fn parse_dice_expression(dice_expr: &str) -> IResult<&str, Dice> {
         let (remaining, dice) = all_consuming(preceded(
             opt(tag("+")),
             terminated(u8, opt(preceded(multispace0, tag("d")))),
-        ))(dice_expr)?;
+        ))
+        .parse(dice_expr)?;
         Ok((remaining, Dice { dice }))
     }
     pub fn parse_thorns_expression(thorns_expr: &str) -> IResult<&str, Thorns> {
         let (remaining, thorns) = all_consuming(preceded(
             opt(tag("+")),
             terminated(u8, opt(preceded(multispace0, tag("t")))),
-        ))(thorns_expr)?;
+        ))
+        .parse(thorns_expr)?;
         Ok((remaining, Thorns { thorns }))
     }
     pub fn parse_roll_expression(roll_expr: &str) -> IResult<&str, RollExpr> {
         let optional_plus_before =
             |p| preceded(delimited(multispace0, opt(tag("+")), multispace0), p);
-        assert!(optional_plus_before(opt(terminated(u8, tag("m"))))("").is_ok());
-        let (remaining, (dice, thorns, mastery)) = all_consuming(tuple((
+        assert!(optional_plus_before(opt(terminated(u8, tag("m"))))
+            .parse("")
+            .is_ok());
+        let (remaining, (dice, thorns, mastery)) = all_consuming((
             optional_plus_before(opt(terminated(u8, tag("d")))),
             optional_plus_before(opt(terminated(u8, tag("t")))),
             optional_plus_before(opt(terminated(u8, tag("m")))),
-        )))(roll_expr.trim())?;
+        ))
+        .parse(roll_expr.trim())?;
         Ok((
             remaining,
             RollExpr::new(
@@ -663,7 +668,7 @@ impl ButtonHandler for RollButtonAction {
             match self {
                 RollButtonAction::Assist => {
                     let roll = {
-                        let mut rng = thread_rng();
+                        let mut rng = rng();
                         rolls.sample(&mut rng)
                     };
                     let (rolls, thorns, mastery_dice, assists) =

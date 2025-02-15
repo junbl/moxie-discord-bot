@@ -157,7 +157,7 @@ pub async fn roll_inner(
         thorns.is_some() || potency || only_roll_some.is_some() || show_outcome.unwrap_or_default();
 
     let thorns = thorns.map(|thorns| {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         ctx.data().thorn_dist.roll_n(&mut rng, thorns).collect()
     });
     let pool_result_msg = RollOutcomeMessageBuilder::new(&rolls)
