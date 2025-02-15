@@ -1,7 +1,7 @@
 use derive_setters::Setters;
 use nom::error::Error as NomError;
 use nom::Finish;
-use poise::{CreateReply, ReplyHandle};
+use poise::CreateReply;
 use rand::rng;
 use rand_distr::Distribution;
 use serenity::all::{
@@ -388,9 +388,9 @@ pub async fn roll(
     let message = message_builder.clone().finish();
 
     let needs_to_handle_buttons = super::needs_to_handle_buttons(&message);
-    let reply_handle = ctx.send(message).await?;
+    let _reply_handle = ctx.send(message).await?;
     if needs_to_handle_buttons {
-        handle_buttons::<RollButtonAction>(ctx, (reply_handle, roll_id, message_builder)).await?;
+        handle_buttons::<RollButtonAction>(ctx, roll_id).await?;
     }
 
     Ok(())
@@ -654,7 +654,7 @@ impl From<RollButtonAction> for String {
     }
 }
 impl ButtonHandler for RollButtonAction {
-    type Target<'a> = (ReplyHandle<'a>, RollId, RollOutcomeMessageBuilder<'a>);
+    type Target<'a> = RollId;
     fn handle<'a: 'b, 'b>(
         self,
         ctx: Context<'a>,
@@ -727,9 +727,9 @@ impl ButtonHandler for RollButtonAction {
     }
 }
 
-impl<'a> InteractionTarget for (ReplyHandle<'a>, RollId, RollOutcomeMessageBuilder<'a>) {
+impl InteractionTarget for RollId {
     fn id(&self) -> super::InteractionId {
-        self.1.into()
+        (*self).into()
     }
 }
 
