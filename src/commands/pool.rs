@@ -18,7 +18,7 @@ use crate::{
     },
     error::MoxieError,
     pools_in_database::PoolInDb,
-    rolls::{Pool, Roll, Thorn},
+    rolls::Pool,
     Context, Error,
 };
 
@@ -35,142 +35,6 @@ pub async fn subcommand(ctx: Context<'_>, arg: String) -> Result<(), crate::Erro
     info!("Received command: debug subcommand");
     ctx.say(format!("Hi there! {arg}")).await?;
     Ok(())
-}
-
-macro_rules! emoji {
-    ($emoji_const:ident) => {
-        if std::env::var("SHUTTLE_PROJECT_NAME").is_ok_and(|var| var.contains("-staging")) {
-            staging_emoji::$emoji_const
-        } else {
-            prod_emoji::$emoji_const
-        }
-    };
-}
-
-mod prod_emoji {
-    pub const D61: &str = "<:d61:1270888983051636777>";
-    pub const D62: &str = "<:d62:1270889005373984899>";
-    pub const D63: &str = "<:d63:1270889037514670142>";
-    pub const D64: &str = "<:d64:1270889188190978199>";
-    pub const D64_GRIM: &str = "<:d64_grim:1331067368444661881>";
-    pub const D65: &str = "<:d65:1270889051871776809>";
-    pub const D65_PERFECT: &str = "<:d65_perfect:1270928629286567976>";
-    pub const D66: &str = "<:d66:1270889063628537910>";
-
-    pub const D65_PERFECT_MASTERY: &str = "<:d65_perfect_mastery:1331067597738741821>";
-    pub const D64_GRIM_MASTERY: &str = "<:d64_grim_mastery:1331067565694386247>";
-    pub const D61_MASTERY: &str = "<:d61_mastery:1331067540151079024>";
-    pub const D62_MASTERY: &str = "<:d62_mastery:1331067517929783336>";
-    pub const D63_MASTERY: &str = "<:d63_mastery:1331067487340593192>";
-    pub const D64_MASTERY: &str = "<:d64_mastery:1331067466805416058>";
-    pub const D65_MASTERY: &str = "<:d65_mastery:1331067427471233106>";
-    pub const D66_MASTERY: &str = "<:d66_mastery:1331067398442192946>";
-
-    pub const D88: &str = "<:d88:1270888678700355584>";
-    pub const D87: &str = "<:d87:1270888640054038599>";
-    pub const D86: &str = "<:d86:1270815442394677389>";
-    pub const D85: &str = "<:d85:1270815474309140612>";
-    pub const D84: &str = "<:d84:1270815484412956724>";
-    pub const D83: &str = "<:d83:1270815503912271983>";
-    pub const D82: &str = "<:d82:1270815516671344660>";
-    pub const D81: &str = "<:d81:1270888657426845766>";
-}
-
-mod staging_emoji {
-
-    pub const D61: &str = "<:d61:1330587892707233945>";
-    pub const D62: &str = "<:d62:1330588022965534760>";
-    pub const D63: &str = "<:d63:1330588035968143381>";
-    pub const D64: &str = "<:d64:1330588042800664719>";
-    pub const D64_GRIM: &str = "<:d64_grim:1331070199629353080>";
-    pub const D65: &str = "<:d65:1330588051973345280>";
-    pub const D65_PERFECT: &str = "<:d65:1330588051973345280>";
-    pub const D66: &str = "<:d66:1330588061762846822>";
-
-    pub const D65_PERFECT_MASTERY: &str = "<:d65_perfect_mastery:1331121313645072517>";
-    pub const D64_GRIM_MASTERY: &str = "<:d64_grim_mastery:1331121334972977202>";
-    pub const D61_MASTERY: &str = "<:d61_mastery:1331121254970687579>";
-    pub const D62_MASTERY: &str = "<:d62_mastery:1331121237711126528>";
-    pub const D63_MASTERY: &str = "<:d63_mastery:1331121219898052688>";
-    pub const D64_MASTERY: &str = "<:d64_mastery:1331121199073198170>";
-    pub const D65_MASTERY: &str = "<:d65_mastery:1331120913764319325>";
-    pub const D66_MASTERY: &str = "<:d66_mastery:1331120843916316673>";
-
-    pub const D88: &str = "<:d88:1330588239282704457>";
-    pub const D87: &str = "<:d87:1330588226238550119>";
-    pub const D86: &str = "<:d86:1330588215148675102>";
-    pub const D85: &str = "<:d85:1330588201726906501>";
-    pub const D84: &str = "<:d84:1330588187353153627>";
-    pub const D83: &str = "<:d83:1330588115697537095>";
-    pub const D82: &str = "<:d82:1330588084244578334>";
-    pub const D81: &str = "<:d81:1330588072793866322>";
-}
-
-fn get_die_emoji(roll: Roll, mastery: bool) -> &'static str {
-    match roll {
-        Roll::Grim(1) if mastery => emoji!(D61_MASTERY),
-        Roll::Grim(2) if mastery => emoji!(D62_MASTERY),
-        Roll::Grim(3) if mastery => emoji!(D63_MASTERY),
-        Roll::Grim(4) if mastery => emoji!(D64_GRIM_MASTERY),
-        Roll::Messy(4) if mastery => emoji!(D64_MASTERY),
-        Roll::Messy(5) if mastery => emoji!(D65_MASTERY),
-        Roll::Perfect(5) if mastery => emoji!(D65_PERFECT_MASTERY),
-        Roll::Perfect(6) if mastery => emoji!(D66_MASTERY),
-        Roll::Grim(1) => emoji!(D61),
-        Roll::Grim(2) => emoji!(D62),
-        Roll::Grim(3) => emoji!(D63),
-        Roll::Grim(4) => emoji!(D64_GRIM),
-        Roll::Messy(4) => emoji!(D64),
-        Roll::Messy(5) => emoji!(D65),
-        Roll::Perfect(5) => emoji!(D65_PERFECT),
-        Roll::Perfect(6) => emoji!(D66),
-        other => get_die_emoji(
-            other
-                .as_number()
-                .try_into()
-                .expect("Rolls must only be in the 1-6 range"),
-            mastery,
-        ),
-    }
-}
-
-fn get_thorn_emoji(thorn: Thorn) -> &'static str {
-    [
-        (8, emoji!(D88)),
-        (7, emoji!(D87)),
-        (6, emoji!(D86)),
-        (5, emoji!(D85)),
-        (4, emoji!(D84)),
-        (3, emoji!(D83)),
-        (2, emoji!(D82)),
-        (1, emoji!(D81)),
-    ]
-    .into_iter()
-    .find_map(|(roll_number, emoji)| (thorn.as_number() == roll_number).then_some(emoji))
-    .expect("Thorns must only be in the 1-8 range")
-}
-
-pub fn rolls_str(rolls: &[Roll], mastery_dice: Dice) -> String {
-    rolls
-        .iter()
-        .copied()
-        .enumerate()
-        .map(|(i, r)| {
-            let mastery = i < mastery_dice.dice as usize;
-            // let emoji = get_die_emoji(r, mastery);
-            // if mastery && i == 0 {
-            //     std::borrow::Cow::Owned(format!("ᓬ {emoji}"))
-            // } else if i == mastery_dice.dice as usize {
-            //     std::borrow::Cow::Owned(format!("{emoji} ᕒ"))
-            // } else {
-            //     std::borrow::Cow::Borrowed(emoji)
-            // }
-            get_die_emoji(r, mastery)
-        })
-        .join(" ")
-}
-pub fn thorns_str(thorns: &[Thorn]) -> String {
-    thorns.iter().copied().map(get_thorn_emoji).join(" ")
 }
 
 /// If the scope argument is not provided, use this to default to
@@ -293,7 +157,7 @@ pub async fn roll_inner(
         thorns.is_some() || potency || only_roll_some.is_some() || show_outcome.unwrap_or_default();
 
     let thorns = thorns.map(|thorns| {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         ctx.data().thorn_dist.roll_n(&mut rng, thorns).collect()
     });
     let pool_result_msg = RollOutcomeMessageBuilder::new(&rolls)

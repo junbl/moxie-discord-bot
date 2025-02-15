@@ -55,7 +55,7 @@ macro_rules! match_scope {
         }
     };
 }
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum PoolId {
     Server(i32),
     Channel(i32),
