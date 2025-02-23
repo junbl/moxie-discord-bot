@@ -147,6 +147,7 @@ pub async fn list(
     #[description = "Character name search string"] name: Option<String>,
 ) -> Result<(), Error> {
     let mut query = character::Entity::find()
+        .filter(character::Column::UserId.eq(ctx.author().id.get() as i64))
         .find_also_related(active_character::Entity)
         .order_by_desc(active_character::Column::Updated)
         .order_by_desc(character::Column::Updated);
