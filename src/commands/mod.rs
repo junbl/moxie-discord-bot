@@ -239,7 +239,7 @@ where
     Ok(())
 }
 
-fn interaction_reponse_message(reply: CreateReply) -> CreateInteractionResponseMessage {
+fn interaction_response_message(reply: CreateReply) -> CreateInteractionResponseMessage {
     CreateInteractionResponseMessage::new()
         .content(reply.content.unwrap_or_default())
         .components(reply.components.unwrap_or_default())

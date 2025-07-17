@@ -24,7 +24,7 @@ use crate::{write_s, Context, Error};
 
 use super::pool::{delete_message, reset_message, roll_inner};
 use super::{
-    get_rolls_from_message, interaction_reponse_message, ButtonHandler, ButtonHandlerFuture,
+    get_rolls_from_message, interaction_response_message, ButtonHandler, ButtonHandlerFuture,
     InteractionTarget,
 };
 
@@ -348,6 +348,7 @@ pub async fn roll(
     #[description = "Adds the specified number of mastery dice to your roll"]
     plus_mastery_dice: Option<Dice>,
     #[description = "Treats 5s as 6s and 4s as 1s"] wild: Option<bool>,
+    #[description = "The name of a pool to roll as bonus dice"] bonus_dice_pool: Option<String>,
     #[description = "Prints out the given name with the roll to show what this roll is for"]
     name: Option<String>,
     #[description = "Prints out that this was rolled with potency"] potency: Option<bool>,
@@ -626,7 +627,7 @@ impl ButtonHandler for PoolButtonAction {
                     roll_inner(&ctx, &mut pool, None, None, None, None).await
                 }
             }
-            .map(interaction_reponse_message)
+            .map(interaction_response_message)
             .map(serenity::all::CreateInteractionResponse::Message)
             .map(Some)
         })

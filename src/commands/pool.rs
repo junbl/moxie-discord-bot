@@ -16,8 +16,8 @@ use crate::{
         roll::{Dice, PoolButtonAction, RollOutcomeMessageBuilder, Thorns},
         ButtonInteraction, Scope,
     },
-    error::MoxieError,
     database::PoolInDb,
+    error::MoxieError,
     rolls::Pool,
     Context, Error,
 };
@@ -146,11 +146,7 @@ pub async fn roll_inner(
 ) -> Result<CreateReply, Error> {
     let pre_roll_size = pool.pool.dice();
     let rolls = pool
-        .roll(
-            ctx.data().db.conn(),
-            &ctx.data().roll_dist,
-            only_roll_some,
-        )
+        .roll(ctx.data().db.conn(), &ctx.data().roll_dist, only_roll_some)
         .await?;
     let potency = potency.unwrap_or_default();
     let show_outcome =
