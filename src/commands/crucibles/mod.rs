@@ -1,6 +1,7 @@
 use crate::{Context, Error};
 use itertools::Itertools;
 use poise::CreateReply;
+use rand::Rng;
 use rand::seq::IndexedRandom;
 use strum::{EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 
@@ -51,7 +52,7 @@ async fn get_crucible(crucible_name: CrucibleName) -> anyhow::Result<Vec<Crucibl
         CrucibleName::Eyes => vec!["eyes"],
         CrucibleName::Faction => vec!["factions1", "factions2"],
         CrucibleName::Gm => vec!["gm1", "gm2"],
-        CrucibleName::Herbalism => vec!["herbalism1", "herbalism2"],
+        CrucibleName::Herbalism => vec!["herbalism_name", "herbalism_form"],
         CrucibleName::Heritage => vec!["heritage_people", "heritage_mood", "heritage_land"],
         CrucibleName::Instrument => vec!["bard_instrument"],
         CrucibleName::MartialArts => vec![
@@ -89,10 +90,18 @@ pub async fn crucible(
     #[description = "Which crucible to roll"]
     crucible_name: CrucibleName,
 ) -> Result<(), Error> {
-    let crucibles = get_crucible(crucible_name).await?;
+    let mut crucibles = get_crucible(crucible_name).await?;
 
+    let separator = match crucible_name {
+        CrucibleName::Herbalism => "",
+        _ => " ",
+    };
     let crucible_result_message = {
         let mut rng = rand::rng();
+        if matches!(crucible_name, CrucibleName::SpellTheorem) {
+            let removed = rng.random_range(..crucibles.len());
+            crucibles.remove(removed);
+        }
         crucibles
             .into_iter()
             .map(|crucible| {
@@ -103,7 +112,7 @@ pub async fn crucible(
                 let cell = row.choose(&mut rng).expect("crucible shouldn't be empty");
                 cell.to_string()
             })
-            .join(" ")
+            .join(separator)
     };
     let message = CreateReply::default().content(format!(
         "Rolled on crucible `{}`:\n## {crucible_result_message}",
