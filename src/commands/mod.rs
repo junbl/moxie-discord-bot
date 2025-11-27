@@ -239,7 +239,7 @@ where
     Ok(())
 }
 
-fn interaction_reponse_message(reply: CreateReply) -> CreateInteractionResponseMessage {
+fn interaction_response_message(reply: CreateReply) -> CreateInteractionResponseMessage {
     CreateInteractionResponseMessage::new()
         .content(reply.content.unwrap_or_default())
         .components(reply.components.unwrap_or_default())
@@ -250,6 +250,13 @@ fn interaction_reponse_message(reply: CreateReply) -> CreateInteractionResponseM
 pub async fn hello(ctx: Context<'_>) -> Result<(), Error> {
     info!("Received command: hello");
     ctx.say("<3").await?;
+    Ok(())
+}
+
+/// Lie
+#[poise::command(slash_command)]
+pub async fn lie(ctx: Context<'_>) -> Result<(), Error> {
+    ctx.say("Hey everyone it's Max!\nhttps://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fmedia1.tenor.com%2Fm%2Fbf-tLVapAWYAAAAd%2Fsam-reich-gamechanger.gif&f=1&nofb=1&ipt=24b172096c9230e2257892ad65ef01f0aaa59ee0da8b218ce9f02c72dfc3c2f7").await?;
     Ok(())
 }
 

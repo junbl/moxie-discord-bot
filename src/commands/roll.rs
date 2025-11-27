@@ -24,7 +24,7 @@ use crate::{write_s, Context, Error};
 
 use super::pool::{delete_message, reset_message, roll_inner};
 use super::{
-    get_rolls_from_message, interaction_reponse_message, ButtonHandler, ButtonHandlerFuture,
+    get_rolls_from_message, interaction_response_message, ButtonHandler, ButtonHandlerFuture,
     InteractionTarget,
 };
 
@@ -626,7 +626,7 @@ impl ButtonHandler for PoolButtonAction {
                     roll_inner(&ctx, &mut pool, None, None, None, None).await
                 }
             }
-            .map(interaction_reponse_message)
+            .map(interaction_response_message)
             .map(serenity::all::CreateInteractionResponse::Message)
             .map(Some)
         })
