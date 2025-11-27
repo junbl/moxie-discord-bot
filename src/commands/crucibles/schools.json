@@ -1,0 +1,42 @@
+[
+    {
+        "name": "Abjuration",
+        "color": "cyan",
+        "description": "Protects, blocks, dispels, or banishes."
+    },
+    {
+        "name": "Conjuration",
+        "color": "green",
+        "description": "Summons and teleports creatures and objects."
+    },
+    {
+        "name": "Divination",
+        "color": "white",
+        "description": "Reveals information, predicts the future, and reads minds."
+    },
+    {
+        "name": "Enchantment",
+        "color": "pink",
+        "description": "Charms, influences, and curses sentient creatures."
+    },
+    {
+        "name": "Evocation",
+        "color": "red",
+        "description": "Creates and controls elemental and magical forces."
+    },
+    {
+        "name": "Illusion",
+        "color": "purple",
+        "description": "Generates false images and sensory deceptions."
+    },
+    {
+        "name": "Necromancy",
+        "color": "teal",
+        "description": "Manipulates life, death, and the undead"
+    },
+    {
+        "name": "Transmutation",
+        "color": "yellow",
+        "description": "Transforms matter and alters physical properties."
+    }
+]

@@ -48,6 +48,8 @@ async fn main(
                 roll(),
                 scenebreak(),
                 character(),
+                crucible(),
+                lie(),
             ],
             ..Default::default()
         })
@@ -84,3 +86,6 @@ macro_rules! write_s {
     };
 }
 pub(crate) use write_s;
+
+use crate::commands::crucibles::crucible;
+use crate::commands::lie;
