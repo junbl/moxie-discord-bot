@@ -1,0 +1,8 @@
+[
+    ["skin", "temperature", "icy", "smoke", "rain", "lightning"],
+    ["gust", "sparks", "rattle", "tremor", "color", "scent"],
+    ["ground", "fire", "water", "light", "debris", "flicker"],
+    ["creatures", "growth", "boom", "effect", "steps", "levitation"],
+    ["cloud", "invisibility", "gloom", "distortion", "metal", "eye"],
+    ["shadow", "clock", "twist", "laughter", "breath", "hum"]
+]

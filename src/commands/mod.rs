@@ -29,6 +29,7 @@ pub mod character;
 pub mod pool;
 pub mod roll;
 pub mod suspense;
+pub mod crucibles;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Scope {
@@ -48,7 +49,6 @@ pub enum ScopeParseError {
 impl ArgumentConvert for Scope {
     type Err = ScopeParseError;
 
-    #[must_use]
     #[allow(clippy::type_complexity, clippy::type_repetition_in_bounds)]
     fn convert<'life0, 'async_trait>(
         _ctx: impl 'async_trait + CacheHttp,

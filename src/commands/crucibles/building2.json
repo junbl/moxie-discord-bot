@@ -1,0 +1,8 @@
+[
+    ["alchemist", "shrine", "temple", "watchtower", "gemcutter", "observatory"],
+    ["docks", "barracks", "armory", "guild hall", "scribe", "graveyard"],
+    ["orphanage", "stable", "tower", "market", "library", "brewery"],
+    ["baker", "blacksmith", "arena", "keep", "jail", "teahouse"],
+    ["herbalist", "tavern", "inn", "fletcher", "manor", "bathhouse"],
+    ["carpenter", "fortune teller", "weaver", "glassblower", "warehouse", "clocktower"]
+]

@@ -89,7 +89,7 @@ impl std::fmt::Display for RollExpr {
         } = self;
         write!(f, "{}", *dice + *mastery)?;
         if !thorns.is_empty() {
-            write!(f, "{}", thorns)?;
+            write!(f, "{thorns}")?;
         }
         Ok(())
     }
@@ -633,7 +633,7 @@ impl ButtonHandler for PoolButtonAction {
     }
 }
 
-impl<'a> InteractionTarget for &'a PoolInDb {
+impl InteractionTarget for &PoolInDb {
     fn id(&self) -> super::InteractionId {
         self.id.into()
     }

@@ -1,0 +1,17 @@
+[
+    {
+        "name": "Remnants",
+        "color": "yellow",
+        "description": "Forgotten people of the borderlands."
+    },
+    {
+        "name": "Wilds",
+        "color": "green",
+        "description": "Untamed and unforgiving wilderness."
+    },
+    {
+        "name": "Ruins",
+        "color": "purple",
+        "description": "A fallen empire."
+    }
+]
