@@ -2,6 +2,7 @@
 /*/target
 Secrets*.toml
 .env
+*.sql
 .shuttle*
 
 *.profraw
